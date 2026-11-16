@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: autoboq-2d
+    runtime: docker
+    plan: free
+    autoDeploy: true
