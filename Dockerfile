@@ -15,4 +15,4 @@ COPY . .
 ENV PORT=8095
 EXPOSE 8095
 
-CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8095}"]
+CMD ["sh", "-c", "uvicorn fastapi_app:app --host 0.0.0.0 --port ${PORT:-8095}"]

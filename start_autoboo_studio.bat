@@ -7,5 +7,5 @@ echo   Step 1: Upload Drawing  -^>  Step 2: Click/Trace on Plan  -^>  Step 3: Ex
 echo   Opening browser at http://127.0.0.1:8095 ...
 echo ====================================================================
 start "" "http://127.0.0.1:8095"
-python -m uvicorn app:app --host 127.0.0.1 --port 8095
+python -m uvicorn fastapi_app:app --host 127.0.0.1 --port 8095
 pause
