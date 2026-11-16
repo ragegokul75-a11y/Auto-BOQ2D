@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 from typing import Any, Dict, List
 
+import pymupdf
 import streamlit as st
 from PIL import Image, ImageDraw
 
@@ -43,8 +44,8 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _xlsx_bytes_to_pdf_bytes(xlsx_bytes: bytes) -> bytes:
-    """Converts an .xlsx workbook to .pdf using Excel COM (Windows) or LibreOffice (Linux Cloud)."""
+def _xlsx_bytes_to_pdf_bytes(xlsx_bytes: bytes, payload: Dict[str, Any] | None = None) -> bytes:
+    """Converts an .xlsx workbook to .pdf using Excel COM (Windows), LibreOffice, or pure-Python PyMuPDF."""
     fd_x, tmp_xlsx = tempfile.mkstemp(suffix=".xlsx")
     fd_p, tmp_pdf = tempfile.mkstemp(suffix=".pdf")
     os.close(fd_p)
@@ -59,10 +60,10 @@ def _xlsx_bytes_to_pdf_bytes(xlsx_bytes: bytes) -> bytes:
                 capture_output=True,
                 text=True,
             )
-        else:
-            soffice = shutil.which("soffice") or shutil.which("libreoffice")
-            if not soffice:
-                raise RuntimeError("LibreOffice (soffice) is not installed in this environment.")
+            with open(tmp_pdf, "rb") as pf:
+                return pf.read()
+        soffice = shutil.which("soffice") or shutil.which("libreoffice")
+        if soffice:
             out_dir = os.path.dirname(tmp_pdf)
             subprocess.run(
                 [soffice, "--headless", "--convert-to", "pdf", "--outdir", out_dir, tmp_xlsx],
@@ -73,8 +74,10 @@ def _xlsx_bytes_to_pdf_bytes(xlsx_bytes: bytes) -> bytes:
             gen_pdf = os.path.splitext(tmp_xlsx)[0] + ".pdf"
             if gen_pdf != tmp_pdf and os.path.exists(gen_pdf):
                 shutil.move(gen_pdf, tmp_pdf)
-        with open(tmp_pdf, "rb") as pf:
-            return pf.read()
+            with open(tmp_pdf, "rb") as pf:
+                return pf.read()
+        # Pure-Python fallback using PyMuPDF (works on Streamlit Cloud with zero system packages)
+        return _payload_to_pdf_pymupdf(payload or {})
     finally:
         for p in (tmp_xlsx, tmp_pdf):
             try:
@@ -82,6 +85,59 @@ def _xlsx_bytes_to_pdf_bytes(xlsx_bytes: bytes) -> bytes:
                     os.remove(p)
             except OSError:
                 pass
+
+
+def _payload_to_pdf_pymupdf(payload: Dict[str, Any]) -> bytes:
+    """Renders a clean A4 landscape PDF summary of the BOQ, Abstract & BBS using PyMuPDF."""
+    doc = pymupdf.open()
+    page = doc.new_page(width=842, height=595)  # A4 landscape
+    y = 40
+    proj = payload.get("project_name", "AutoBOQ Estimate")
+    client = payload.get("client_name", "")
+    dwg = payload.get("drawing_no", "")
+
+    def line(txt: str, size: float = 10.0, bold: bool = False):
+        nonlocal page, y
+        if y > 555:
+            page = doc.new_page(width=842, height=595)
+            y = 40
+        fontname = "helv" if not bold else "hebo"
+        page.insert_text((36, y), txt, fontsize=size, fontname=fontname, color=(0.06, 0.09, 0.16))
+        y += size + 6
+
+    line(f"BILL OF QUANTITIES & ABSTRACT — {proj}", size=14, bold=True)
+    line(f"Client: {client}   |   Drawing No: {dwg}", size=10, bold=False)
+    y += 6
+    line("S.No  Code        Description                                              Qty       Unit     Rate (INR)    Amount (INR)", size=9.5, bold=True)
+    sub = 0.0
+    for idx, grp in enumerate(payload.get("takeoff_groups", []), start=1):
+        qty = sum(m["nos"] * m["length"] * m["breadth"] * m["depth"] for m in grp.get("measurements", []))
+        amt = qty * grp.get("rate", 0.0)
+        sub += amt
+        desc = (grp.get("description") or "")[:48]
+        line(f"{idx:<5} {grp.get('dsr_code',''):<11} {desc:<48} {qty:>8.2f}  {grp.get('unit',''):<7} {grp.get('rate',0):>10.2f}  {amt:>12.2f}", size=8.5)
+    cont_pct = float(payload.get("contingency_pct", 3.0))
+    gst_pct = float(payload.get("gst_pct", 18.0))
+    cont = sub * cont_pct / 100.0
+    gst = (sub + cont) * gst_pct / 100.0
+    y += 6
+    line(f"Sub-Total: INR {sub:,.2f}   |   Contingency ({cont_pct}%): INR {cont:,.2f}   |   GST ({gst_pct}%): INR {gst:,.2f}", size=10, bold=True)
+    line(f"GRAND TOTAL: INR {sub + cont + gst:,.2f}", size=12, bold=True)
+
+    bbs_rows = payload.get("bbs_rows") or []
+    if bbs_rows:
+        y += 12
+        line("BAR BENDING SCHEDULE (REINFORCEMENT STEEL)", size=12, bold=True)
+        tot_kg = 0.0
+        for idx, b in enumerate(bbs_rows, start=1):
+            dia = int(b.get("dia_mm", 12))
+            tl = int(b.get("num_members", 1)) * int(b.get("bars_per_member", 1)) * float(b.get("a_m", 0))
+            kg = tl * ((dia * dia) / 162.2)
+            tot_kg += kg
+            line(f"{idx:<4} {b.get('member_group','')[:18]:<19} {b.get('shape_code','SC-00'):<7} Ø{dia:<3}mm  Cut:{b.get('a_m',0):>6.3f}m  Total:{tl:>7.2f}m  Wt:{kg:>8.2f} kg", size=8.5)
+        line(f"TOTAL STEEL WEIGHT: {tot_kg:,.2f} kg ({tot_kg/1000:.3f} MT)", size=11, bold=True)
+
+    return doc.tobytes()
 
 
 def _render_dxf_preview_image(dwg: Dict[str, Any]) -> Image.Image:
@@ -219,9 +275,9 @@ with tab1:
             st.subheader(f"Drawing Preview: {dwg.get('filename', '')} ({dwg['format']})")
             if dwg.get("image"):
                 b64 = dwg["image"]["src"].split(",", 1)[1]
-                st.image(base64.b64decode(b64), use_container_width=True)
+                st.image(base64.b64decode(b64), width=680)
             else:
-                st.image(_render_dxf_preview_image(dwg), use_container_width=True)
+                st.image(_render_dxf_preview_image(dwg), width=680)
             st.caption(
                 f"Units: {dwg.get('unit_name')} | Polylines: {dwg['stats']['polylines']} | Texts: {dwg['stats']['texts']}"
             )
@@ -398,7 +454,7 @@ with tab2:
         with col_pd:
             if st.button("⚙ Prepare Project BOQ PDF (.pdf)", use_container_width=True):
                 try:
-                    pdf_data = _xlsx_bytes_to_pdf_bytes(xlsx_data)
+                    pdf_data = _xlsx_bytes_to_pdf_bytes(xlsx_data, export_payload)
                     st.download_button(
                         "⬇ Save Project BOQ PDF",
                         data=pdf_data,
@@ -559,8 +615,8 @@ with tab3:
     st.subheader("3. Detailing Reference Figures")
     g1, g2, g3 = st.columns(3)
     if os.path.exists(diags["DETAIL_CRANK"]):
-        g1.image(diags["DETAIL_CRANK"], caption="1. Cranked Bar Arrangement (SC-41)", use_container_width=True)
+        g1.image(diags["DETAIL_CRANK"], caption="1. Cranked Bar Arrangement (SC-41)", width=360)
     if os.path.exists(diags["DETAIL_STIRRUP"]):
-        g2.image(diags["DETAIL_STIRRUP"], caption="2. Closed Stirrup 135° Hook Detail (SC-51)", use_container_width=True)
+        g2.image(diags["DETAIL_STIRRUP"], caption="2. Closed Stirrup 135° Hook Detail (SC-51)", width=360)
     if os.path.exists(diags["DETAIL_EXTRA"]):
-        g3.image(diags["DETAIL_EXTRA"], caption="3. Extra Support Bars Arrangement", use_container_width=True)
+        g3.image(diags["DETAIL_EXTRA"], caption="3. Extra Support Bars Arrangement", width=360)
