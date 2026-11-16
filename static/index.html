@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoBOQ 2D – On-screen Takeoff &amp; BOQ</title>
+<link rel="stylesheet" href="/static/style.css?v=3">
+</head>
+<body>
+
+<!-- ====================== HEADER ====================== -->
+<header class="topbar">
+  <div class="brand">AutoBOQ <span>2D</span></div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="takeoff">1. Drawing &amp; Takeoff</button>
+    <button class="tab" data-tab="boq">2. BOQ &amp; Abstract</button>
+    <button class="tab" data-tab="steel">3. Steel (kg)</button>
+  </nav>
+  <div class="top-actions">
+    <span id="file-name" class="file-name">No drawing open</span>
+    <a class="btn" href="/api/download-bbs-template" download title="Download Bar Bending Schedule Excel (Footing, Column, Beam, Slab)">⬇ BBS Excel</a>
+    <a class="btn" href="/api/download-bbs-pdf" download title="Download Bar Bending Schedule PDF (Footing, Column, Beam, Slab)">⬇ BBS PDF</a>
+    <button class="btn" id="btn-export-pdf" title="Export Project BOQ, Abstract, Measurement Sheet & BBS as PDF">⬇ Export PDF</button>
+    <button class="btn primary" id="btn-export">⬇ Export Excel</button>
+  </div>
+</header>
+
+<!-- ====================== TAB 1: TAKEOFF ====================== -->
+<section id="tab-takeoff" class="tabpane active">
+  <div class="toolbar">
+    <label class="btn primary file-btn">📂 Open DXF / DWG / PDF
+      <input type="file" id="file-input" accept=".dxf,.dwg,.pdf" hidden>
+    </label>
+    <select id="sample-select" class="sel" title="Open a sample drawing">
+      <option value="">— or open a sample —</option>
+      <option value="office_mm">Office-style plan (mm, blocks, all on layer 0)</option>
+      <option value="villa">Residential villa (m)</option>
+      <option value="mixed">Mixed / unlayered plan (m)</option>
+      <option value="landscape">Landscape masterplan (m)</option>
+      <option value="commercial">Commercial office (m)</option>
+      <option value="pdf">PDF plan</option>
+    </select>
+    <select id="page-select" class="sel hidden" title="PDF page"></select>
+
+    <span class="sep"></span>
+    <span class="lbl">Units / Scale:</span>
+    <select id="unit-select" class="sel"></select>
+    <button class="btn" id="tool-calibrate" title="Click 2 points of a known dimension">📏 Calibrate</button>
+
+    <span class="sep"></span>
+    <div class="toolgroup" id="toolgroup">
+      <button class="tool active" data-tool="pan" title="Pan / select (Esc)">✋ Pan</button>
+      <button class="tool" data-tool="line" title="Length: click points, Enter / right-click / double-click to finish (L)">📏 Length</button>
+      <button class="tool" data-tool="poly" title="Area: click corners, Enter / right-click / click first point to close (A)">⬠ Area</button>
+      <button class="tool" data-tool="rect" title="Rectangle area: click 2 opposite corners (R)">▭ Rectangle</button>
+      <button class="tool" data-tool="count" title="Count: click each symbol (C)">● Count</button>
+      <button class="tool" data-tool="text" title="Pick a text like 4.50 x 3.60 (T)">🔤 Pick Text</button>
+    </div>
+    <span class="sep"></span>
+    <button class="btn toggle on" id="btn-snap" title="Snap to drawing endpoints">🧲 Snap</button>
+    <button class="btn toggle" id="btn-ortho" title="Horizontal / vertical only (or hold Shift)">⊾ Ortho</button>
+    <button class="btn" id="btn-fit" title="Zoom to fit (F)">⤢ Fit</button>
+  </div>
+
+  <div class="workarea">
+    <div class="canvas-wrap" id="canvas-wrap">
+      <canvas id="cad"></canvas>
+      <div class="empty-msg" id="empty-msg">
+        <h2>Open your drawing</h2>
+        <p>Upload a <b>.DXF</b>, <b>.DWG</b> or <b>.PDF</b> using the button above, or choose a sample.</p>
+        <p class="muted">Your drawing is shown exactly as drawn. Layers don't matter. You measure directly on the plan.</p>
+      </div>
+      <div class="loading hidden" id="loading">Opening drawing…</div>
+      <div class="live-box hidden" id="live-box"></div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <aside class="side">
+      <div class="card">
+        <div class="card-h">Active BOQ item <span class="muted small">(what you measure goes here)</span></div>
+        <select id="dsr-select" class="sel full"></select>
+        <div id="custom-fields" class="grid2 hidden">
+          <input id="cust-desc" class="inp span2" placeholder="Item description">
+          <select id="cust-mode" class="sel">
+            <option value="AREA">Area (Sq.m)</option>
+            <option value="LENGTH">Length (Rmt)</option>
+            <option value="COUNT">Count (Nos)</option>
+            <option value="VOLUME">Volume (Cu.m)</option>
+            <option value="WALL_AREA">Wall area L×H (Sq.m)</option>
+            <option value="WALL_VOLUME">Wall volume L×T×H (Cu.m)</option>
+          </select>
+          <input id="cust-rate" class="inp" type="number" placeholder="Rate ₹">
+        </div>
+        <button class="btn primary full" id="btn-add-item">＋ Add as BOQ item</button>
+      </div>
+
+      <div class="card grow">
+        <div class="card-h">BOQ items on this drawing
+          <span class="muted small">click to make active</span></div>
+        <div id="items-list" class="items-list">
+          <div class="muted small pad">No items yet. Pick an item above and press <b>Add</b>, then measure on the plan.</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="statusbar">
+    <span id="st-coords">X –  Y –</span>
+    <span id="st-units">Units: –</span>
+    <span id="st-hint">Open a drawing to start.</span>
+    <span id="st-stats" class="muted"></span>
+  </div>
+</section>
+
+<!-- ====================== TAB 2: BOQ ====================== -->
+<section id="tab-boq" class="tabpane">
+  <div class="page">
+    <div class="card">
+      <div class="grid4">
+        <label>Project name<input id="meta-project" class="inp" value="Proposed Building &amp; Landscape Works"></label>
+        <label>Client<input id="meta-client" class="inp" value=""></label>
+        <label>Drawing no.<input id="meta-dwg" class="inp" value=""></label>
+        <label>Contingency %<input id="meta-cont" class="inp" type="number" value="3"></label>
+        <label>GST %<input id="meta-gst" class="inp" type="number" value="18"></label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h">Bill of Quantities</div>
+      <table class="tbl" id="boq-table"></table>
+    </div>
+    <div class="card">
+      <div class="card-h">Abstract of Cost</div>
+      <table class="tbl" id="abstract-table"></table>
+    </div>
+  </div>
+</section>
+
+<!-- ====================== TAB 3: STEEL ====================== -->
+<section id="tab-steel" class="tabpane">
+  <div class="page steel-page">
+    <div class="card">
+      <div class="card-h">Isolated footing steel – straight from the structural drawing</div>
+      <div class="steel-grid">
+        <div>
+          <div class="grid3">
+            <label>Footing mark<input id="ft-mark" class="inp" value="F1"></label>
+            <label>No. of footings<input id="ft-nos" class="inp" type="number" value="4"></label>
+            <label>Cover (mm)<input id="ft-cover" class="inp" type="number" value="50"></label>
+            <label>Length L (mm)<input id="ft-L" class="inp" type="number" value="1800"></label>
+            <label>Breadth B (mm)<input id="ft-B" class="inp" type="number" value="1500"></label>
+            <label>Thickness D (mm)<input id="ft-D" class="inp" type="number" value="450"></label>
+          </div>
+          <div class="grid3 mt">
+            <div class="bar-head lx">Longitudinal bars (along L)</div>
+            <label>Dia (mm)<select id="ft-dx" class="sel"></select></label>
+            <label>Spacing (mm)<input id="ft-sx" class="inp" type="number" value="150"></label>
+            <div class="bar-head ly">Transverse bars (along B)</div>
+            <label>Dia (mm)<select id="ft-dy" class="sel"></select></label>
+            <label>Spacing (mm)<input id="ft-sy" class="inp" type="number" value="150"></label>
+          </div>
+          <label class="mt block">Bent-up leg each end (mm) <span class="muted small">default = D − 2×cover</span>
+            <input id="ft-leg" class="inp" type="number" placeholder="auto"></label>
+          <label class="mt" style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
+            <input id="ft-top-mat" type="checkbox"> Include Top Mat (Lx &amp; Ly)
+          </label>
+          <div id="ft-top-mat-fields" class="grid3 mt hidden">
+            <div class="bar-head lx" style="background:#fef3c7;color:#92400e">Top Mat Lx (along L)</div>
+            <label>Dia (mm)<select id="ft-tdx" class="sel"></select></label>
+            <label>Spacing (mm)<input id="ft-tsx" class="inp" type="number" value="150"></label>
+            <div class="bar-head ly" style="background:#e0e7ff;color:#3730a3">Top Mat Ly (along B)</div>
+            <label>Dia (mm)<select id="ft-tdy" class="sel"></select></label>
+            <label>Spacing (mm)<input id="ft-tsy" class="inp" type="number" value="150"></label>
+          </div>
+          <button class="btn primary mt" id="btn-add-footing">＋ Add footing to steel list</button>
+        </div>
+        <div>
+          <svg id="ft-svg" viewBox="0 0 420 330" class="ft-svg"></svg>
+          <div id="ft-calc" class="calc-box"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">Other bars (columns, beams, slabs) – enter Shape Code, Angle (°), Bar Type &amp; Description</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr .8fr 1fr 1.6fr .6fr .6fr .65fr .75fr auto;gap:8px;align-items:end">
+        <label>Member<input id="ob-member" class="inp" value="Beam B1"></label>
+        <label>Shape Code
+          <select id="ob-shape" class="sel">
+            <option value="SC-00">SC-00 (Straight)</option>
+            <option value="SC-01">SC-01 (L-Bend)</option>
+            <option value="SC-02">SC-02 (U-Bar)</option>
+            <option value="SC-41" selected>SC-41 (Cranked)</option>
+            <option value="SC-51">SC-51 (Closed Stirrup)</option>
+          </select>
+        </label>
+        <label>Angle (°)
+          <select id="ob-angle" class="sel">
+            <option value="0">0°</option>
+            <option value="45" selected>45°</option>
+            <option value="90">90°</option>
+            <option value="135">135°</option>
+            <option value="180">180°</option>
+          </select>
+        </label>
+        <label>Bar Type
+          <select id="ob-type" class="sel">
+            <option value="CRANK">CRANK (Bent-up)</option>
+            <option value="STIRRUP">STIRRUP (135° Hook)</option>
+            <option value="EXTRA_SUPPORT">EXTRA_SUPPORT</option>
+            <option value="BOT-MESH-LX">BOT-MESH-LX</option>
+            <option value="BOT-MESH-LY">BOT-MESH-LY</option>
+            <option value="TOP-MAT-LX">TOP-MAT-LX</option>
+            <option value="TOP-MAT-LY">TOP-MAT-LY</option>
+            <option value="MAIN">MAIN</option>
+            <option value="DIST">DIST</option>
+          </select>
+        </label>
+        <label>Bar Description<input id="ob-desc" class="inp" value="Bottom Cranked Bar (45° Bent-up)"></label>
+        <label>Members<input id="ob-nos" class="inp" type="number" value="4"></label>
+        <label>Bars/mem<input id="ob-bars" class="inp" type="number" value="2"></label>
+        <label>Dia (mm)<select id="ob-dia" class="sel"></select></label>
+        <label>Cut len (m)<input id="ob-len" class="inp" type="number" value="5.98" step="0.01"></label>
+        <button class="btn primary self-end" id="btn-add-bar">＋ Add</button>
+      </div>
+      <div id="ob-shape-preview" style="margin-top:8px;padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;display:flex;align-items:center;gap:14px"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">BBS Shape Codes &amp; Bar Detailing Figures</div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(260px,1fr));gap:12px">
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px;background:#f8fafc">
+          <div style="font-weight:700;font-size:12px;color:#0f172a;margin-bottom:4px">1. Cranked Bar Arrangement (SC-41)</div>
+          <svg viewBox="0 0 360 120" style="width:100%;background:#fff;border:1px solid #e2e8f0;border-radius:6px">
+            <rect x="10" y="25" width="30" height="80" fill="#cbd5e1" stroke="#475569"/>
+            <rect x="320" y="25" width="30" height="80" fill="#cbd5e1" stroke="#475569"/>
+            <rect x="40" y="25" width="280" height="58" fill="#f1f5f9" stroke="#64748b"/>
+            <polyline points="18,36 85,36 115,72 245,72 275,36 342,36" fill="none" stroke="#dc2626" stroke-width="3.5"/>
+            <line x1="115" y1="36" x2="115" y2="72" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="3,2"/>
+            <text x="120" y="56" font-size="9" fill="#1d4ed8" font-weight="700">Hc = D-2c-d</text>
+            <text x="180" y="18" text-anchor="middle" font-size="10" fill="#0f172a" font-weight="700">Cut = L + 2×Bearing + n×(0.42×Hc) - 2nd</text>
+            <text x="180" y="108" text-anchor="middle" font-size="9" fill="#475569">45° Bent-up at L/4 or 0.15L from Support</text>
+          </svg>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px;background:#f8fafc">
+          <div style="font-weight:700;font-size:12px;color:#0f172a;margin-bottom:4px">2. Closed Stirrup 135° Hook Detail (SC-51)</div>
+          <svg viewBox="0 0 360 120" style="width:100%;background:#fff;border:1px solid #e2e8f0;border-radius:6px">
+            <rect x="30" y="20" width="95" height="80" fill="#f1f5f9" stroke="#475569"/>
+            <rect x="42" y="32" width="71" height="56" fill="none" stroke="#2563eb" stroke-width="3"/>
+            <line x1="42" y1="32" x2="62" y2="52" stroke="#dc2626" stroke-width="3"/>
+            <line x1="42" y1="32" x2="58" y2="55" stroke="#dc2626" stroke-width="3"/>
+            <circle cx="47" cy="37" r="3" fill="#0f172a"/><circle cx="108" cy="37" r="3" fill="#0f172a"/>
+            <circle cx="47" cy="83" r="3" fill="#0f172a"/><circle cx="108" cy="83" r="3" fill="#0f172a"/>
+            <text x="145" y="38" font-size="10" fill="#dc2626" font-weight="700">135° Seismic Hooks = 10d each</text>
+            <text x="145" y="56" font-size="9.5" fill="#0f172a">• Core: a = b-2c, b' = D-2c</text>
+            <text x="145" y="72" font-size="9.5" fill="#0f172a">• Hooks: +2 × 10d = +20d</text>
+            <text x="145" y="88" font-size="9.5" fill="#0f172a">• Bends: -(3×2d + 2×3d) = -12d</text>
+          </svg>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px;background:#f8fafc">
+          <div style="font-weight:700;font-size:12px;color:#0f172a;margin-bottom:4px">3. Extra Support Bars (SC-01 / SC-00)</div>
+          <svg viewBox="0 0 360 120" style="width:100%;background:#fff;border:1px solid #e2e8f0;border-radius:6px">
+            <rect x="12" y="25" width="26" height="75" fill="#cbd5e1" stroke="#475569"/>
+            <rect x="200" y="25" width="26" height="75" fill="#cbd5e1" stroke="#475569"/>
+            <rect x="38" y="25" width="162" height="46" fill="#f1f5f9" stroke="#64748b"/>
+            <rect x="226" y="25" width="120" height="46" fill="#f1f5f9" stroke="#64748b"/>
+            <line x1="20" y1="64" x2="340" y2="64" stroke="#2563eb" stroke-width="2"/>
+            <polyline points="20,58 20,33 95,33" fill="none" stroke="#dc2626" stroke-width="3.5"/>
+            <line x1="150" y1="33" x2="275" y2="33" stroke="#dc2626" stroke-width="3.5"/>
+            <line x1="65" y1="59" x2="175" y2="59" stroke="#16a34a" stroke-width="3"/>
+            <text x="102" y="45" font-size="9" fill="#dc2626" font-weight="700">Top Extra (0.3L + Ld)</text>
+            <text x="120" y="96" text-anchor="middle" font-size="9" fill="#15803d" font-weight="700">Bottom Mid Curtail (0.7L)</text>
+            <text x="275" y="96" text-anchor="middle" font-size="9" fill="#dc2626" font-weight="700">0.3L1+Col+0.3L2</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">Steel list
+        <span class="right">Rate ₹/kg <input id="steel-rate" class="inp w80" type="number" value="82"></span></div>
+      <table class="tbl" id="steel-table"></table>
+      <div class="mt" style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn primary" id="btn-steel-to-boq">→ Put total steel (kg) into BOQ</button>
+        <a class="btn" href="/api/download-bbs-template" download>⬇ Download BBS Excel (Footing, Column, Beam, Slab)</a>
+        <a class="btn" href="/api/download-bbs-pdf" download>⬇ Download BBS PDF (Footing, Column, Beam, Slab)</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="/static/app.js?v=3"></script>
+</body>
+</html>

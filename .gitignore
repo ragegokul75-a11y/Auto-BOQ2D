@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+
+# OS / Temp
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+~$*.xlsx
+*.log
+
+Auto-BOQ2D/
+AutoBOQ-2D/
+AutoBOQ2D/
