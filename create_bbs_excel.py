@@ -354,12 +354,12 @@ def build_footing_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
 # =============================================================================
 def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
     ws = wb.create_sheet("3. Column BBS (Main & Ties)")
-    max_col = 30  # A..AD
+    max_col = 32  # A..AF
     _setup_sheet_banner(
         ws,
         max_col,
-        "COLUMN BAR BENDING SCHEDULE — BEGINNER-FRIENDLY (IS 13920 / SP 34 / M25 / Fe-500)",
-        "Matched to your RC Column Drawing: Auto Ld = 40×d | 135° Hook = MAX(10d, 75mm) | Confining Zone (HC/4 Top & Bot) @ 100 c/c | Lap Zone (HC/2) @ 150 c/c.",
+        "COLUMN BAR BENDING SCHEDULE — DYNAMIC VLOOKUP FOOTING DEPTH (F1/F2/F3) & IS 13920 VERTICAL STACK",
+        "Auto VLOOKUP pulls Footing Pad Depth Df from Sheet 2 (F1/F2/F3/CF1) | Zone A = Base L-Bend + VLOOKUP(Df) + Neck + 40d Lap | Zone B = HC/4 & HC/2 Ties.",
     )
 
     # Row 3: Drawing Defaults / Constants (Yellow = Editable once for whole building)
@@ -370,7 +370,7 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
         (7, "Footing L-Bend (mm):", 9, 400),
         (10, "Floor Height HC (mm):", 12, 3300),
         (13, "Lap Factor (1=40d):", 15, 1.0),
-        (16, "Zone A Fdn-Plinth (mm):", 18, 2250),
+        (16, "Zone A Neck Ht (mm):", 18, 1800),
         (19, "Zone C Parapet Ht (mm):", 21, 1000),
     ]
     for lc, lt, vc, val in defaults:
@@ -392,11 +392,11 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
     g4 = ws.cell(
         4,
         1,
-        "VERTICAL STACK (ZONE A FOUNDATION -> ZONE B FLOORS -> ZONE C TERRACE/PARAPET):  "
-        "1) Enter 'No. of Cols' (Col H) from your plan.  "
-        "2) Zone A includes Footing L-Bend (400mm) + Neck (2250mm) + 40d Plinth Lap + Y10@100 ties.  "
-        "3) Zone B splits ties into Bot HC/4 (@100), Mid HC/2 (@150), Top HC/4 (@100).  "
-        "4) Zone C covers Terrace Roof Ld + Parapet.",
+        "DYNAMIC FOOTING LOOKUP + VERTICAL STACK:  "
+        "1) Pick Footing Ref (Col H: F1/F2/F3/CF1) — Col N automatically VLOOKUPs Pad Depth Df from Sheet 2!  "
+        "2) Enter No. of Cols (Col I).  "
+        "3) Zone A Cut = Base L-Bend + VLOOKUP(Df) + Neck + 40d Lap - Bend Ded.  "
+        "4) Zone B Ties = Bot HC/4 (@100), Mid HC/2 (@150), Top HC/4 (@100).",
     )
     g4.font = FONT_NOTE
     g4.fill = FILL_SUB
@@ -405,116 +405,118 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
 
     headers = [
         ("S.No", 5),                       # 1 A
-        ("Col Mark & Floor", 15),          # 2 B
+        ("Col Mark & Zone", 16),           # 2 B
         ("Shape Code", 10),                # 3 C
         ("Shape Figure", 19),              # 4 D
         ("Angle (°)", 9),                  # 5 E
         ("Bar Type", 10),                  # 6 F
         ("Plain-English Bar Description", 34), # 7 G
-        ("No. of Cols", 10),               # 8 H
-        ("Width b (mm)", 10),              # 9 I
-        ("Depth D (mm)", 10),              # 10 J
-        ("Cover c (mm)", 9),               # 11 K
-        ("Height / Zone H (mm)", 12),      # 12 L
-        ("Base L-Bend (mm)", 11),          # 13 M
-        ("Dia d (mm)", 9),                 # 14 N
-        ("Bars/Col or Spacing", 12),       # 15 O
-        ("Auto Ld=40d (mm)", 11),          # 16 P
-        ("135° Hook MAX(10d,75)", 12),     # 17 Q
-        ("Calc Bars / Col", 11),           # 18 R
-        ("Total Bars", 10),                # 19 S
-        ("Cutting Length (m)", 12),        # 20 T
-        ("Total Length (m)", 12),          # 21 U
-        ("Unit Wt (kg/m)", 11),            # 22 V
-        ("8 mm (kg)", 11),                 # 23 W
-        ("10 mm (kg)", 11),                # 24 X
-        ("12 mm (kg)", 11),                # 25 Y
-        ("16 mm (kg)", 11),                # 26 Z
-        ("20 mm (kg)", 11),                # 27 AA
-        ("25 mm (kg)", 11),                # 28 AB
-        ("32 mm (kg)", 11),                # 29 AC
-        ("Total Wt (kg)", 13),             # 30 AD
+        ("Footing Ref", 11),               # 8 H
+        ("No. of Cols", 10),               # 9 I
+        ("Width b (mm)", 10),              # 10 J
+        ("Depth D (mm)", 10),              # 11 K
+        ("Cover c (mm)", 9),               # 12 L
+        ("Neck / Clear H (mm)", 12),       # 13 M
+        ("Auto Pad Df (VLOOKUP)", 12),     # 14 N
+        ("Base L-Bend (mm)", 11),          # 15 O
+        ("Dia d (mm)", 9),                 # 16 P
+        ("Bars/Col or Spacing", 12),       # 17 Q
+        ("Auto Ld=40d (mm)", 11),          # 18 R
+        ("135° Hook MAX(10d,75)", 12),     # 19 S
+        ("Calc Bars / Col", 11),           # 20 T
+        ("Total Bars", 10),                # 21 U
+        ("Cutting Length (m)", 12),        # 22 V
+        ("Total Length (m)", 12),          # 23 W
+        ("Unit Wt (kg/m)", 11),            # 24 X
+        ("8 mm (kg)", 11),                 # 25 Y
+        ("10 mm (kg)", 11),                # 26 Z
+        ("12 mm (kg)", 11),                # 27 AA
+        ("16 mm (kg)", 11),                # 28 AB
+        ("20 mm (kg)", 11),                # 29 AC
+        ("25 mm (kg)", 11),                # 30 AD
+        ("32 mm (kg)", 11),                # 31 AE
+        ("Total Wt (kg)", 13),             # 32 AF
     ]
-    _write_headers(ws, 6, headers, freeze_col="H")
+    _write_headers(ws, 6, headers, freeze_col="I")
 
     # Exact Column Schedule from User's Structural Drawing (C1..C9 & SC)
     # Tuple: (Mark, Shape, Angle, Type, Desc, Nos, b, D, Cover, ZoneH, BaseBend, Dia, BarsOrSpacing)
     def _std_tie_zones(mark_base: str, b_mm: int, d_mm: int):
         return [
-            (f"{mark_base} [Zone A Neck]", "SC-51", 135, "TIE", "Zone A: Foundation Neck Ties (Y10 @ 100 c/c Outer)", 1, b_mm, d_mm, "=$C$3", "=$R$3", 0, 10, 100),
-            (f"{mark_base} [Zone B Bot]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Bot HC/4 (Y8 @ 100 c/c)", 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
-            (f"{mark_base} [Zone B Top]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Top HC/4 (Y8 @ 100 c/c)", 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
-            (f"{mark_base} [Zone B Mid]",  "SC-51", 135, "TIE", "Zone B: Lap Splice Ties — Mid HC/2 (Y8 @ 150 c/c)", 1, b_mm, d_mm, "=$C$3", "=$L$3/2", 0, 8, 150),
+            (f"{mark_base} [Zone A Neck]", "SC-51", 135, "TIE", "Zone A: Foundation Neck Ties (Y10 @ 100 c/c Outer)", "NONE", 1, b_mm, d_mm, "=$C$3", "=$R$3", 0, 10, 100),
+            (f"{mark_base} [Zone B Bot]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Bot HC/4 (Y8 @ 100 c/c)", "NONE", 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
+            (f"{mark_base} [Zone B Top]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Top HC/4 (Y8 @ 100 c/c)", "NONE", 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
+            (f"{mark_base} [Zone B Mid]",  "SC-51", 135, "TIE", "Zone B: Lap Splice Ties — Mid HC/2 (Y8 @ 150 c/c)", "NONE", 1, b_mm, d_mm, "=$C$3", "=$L$3/2", 0, 8, 150),
         ]
 
+    # Tuple: (Mark, Shape, Angle, Type, Desc, FootingRef, Nos, b, D, Cover, NeckOrClearH, BaseBend, Dia, BarsOrSpacing)
     sample_rows = [
-        # Zone A + Zone B for C1..C9
-        ("C1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y20) Fdn Pad + Neck + 40d Lap", 1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 6),
-        ("C1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y16) Fdn Pad + Neck + 40d Lap", 1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 16, 4),
-        ("C1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — Upto FFR",         1, 300, 450, "=$C$3", "=$L$3", 0,       20, 6),
-        ("C1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — Upto FFR",         1, 300, 450, "=$C$3", "=$L$3", 0,       16, 4),
-        ("C1 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y16) — FFR to Top",      1, 300, 450, "=$C$3", "=$L$3", 0,       16, 10),
+        ("C1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y20) Fdn Pad + Neck + 40d Lap", "F1",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 6),
+        ("C1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y16) Fdn Pad + Neck + 40d Lap", "F1",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 16, 4),
+        ("C1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — Upto FFR",         "NONE", 1, 300, 450, "=$C$3", "=$L$3", 0,       20, 6),
+        ("C1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — Upto FFR",         "NONE", 1, 300, 450, "=$C$3", "=$L$3", 0,       16, 4),
+        ("C1 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y16) — FFR to Top",      "NONE", 1, 300, 450, "=$C$3", "=$L$3", 0,       16, 10),
         *_std_tie_zones("C1", 300, 450),
 
-        ("C2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y25) Fdn Pad + Neck + 40d Lap", 1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 25, 6),
-        ("C2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y20) Fdn Pad + Neck + 40d Lap", 1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 4),
-        ("C2 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y25 + 4-Y20) — Upto FFR", 1, 300, 450, "=$C$3", "=$L$3", 0,       25, 6),
-        ("C2 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y20) — FFR to Top",      1, 300, 450, "=$C$3", "=$L$3", 0,       20, 10),
+        ("C2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y25) Fdn Pad + Neck + 40d Lap", "F2",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 25, 6),
+        ("C2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y20) Fdn Pad + Neck + 40d Lap", "F2",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 4),
+        ("C2 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y25 + 4-Y20) — Upto FFR", "NONE", 1, 300, 450, "=$C$3", "=$L$3", 0,       25, 6),
+        ("C2 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y20) — FFR to Top",      "NONE", 1, 300, 450, "=$C$3", "=$L$3", 0,       20, 10),
         *_std_tie_zones("C2", 300, 450),
 
-        ("C3 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y25) Fdn + Neck + 40d Lap",     1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 25, 4),
-        ("C3 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (8-Y20) Fdn + Neck + 40d Lap",     1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 20, 8),
-        ("C3 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (12-Y20) — FFR to Top",     1, 300, 600, "=$C$3", "=$L$3", 0,       20, 12),
+        ("C3 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y25) Fdn + Neck + 40d Lap",     "F2",   1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 25, 4),
+        ("C3 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (8-Y20) Fdn + Neck + 40d Lap",     "F2",   1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 20, 8),
+        ("C3 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (12-Y20) — FFR to Top",     "NONE", 1, 300, 600, "=$C$3", "=$L$3", 0,       20, 12),
         *_std_tie_zones("C3", 300, 600),
 
-        ("C4 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (8-Y25) Fdn + Neck + 40d Lap",     1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 25, 8),
-        ("C4 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y20) Fdn + Neck + 40d Lap",     1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 20, 4),
-        ("C4 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y25) — FFR to Top",      1, 300, 600, "=$C$3", "=$L$3", 0,       25, 4),
-        ("C4 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (8-Y20) — FFR to Top",      1, 300, 600, "=$C$3", "=$L$3", 0,       20, 8),
+        ("C4 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (8-Y25) Fdn + Neck + 40d Lap",     "F2",   1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 25, 8),
+        ("C4 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y20) Fdn + Neck + 40d Lap",     "F2",   1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 20, 4),
+        ("C4 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y25) — FFR to Top",      "NONE", 1, 300, 600, "=$C$3", "=$L$3", 0,       25, 4),
+        ("C4 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (8-Y20) — FFR to Top",      "NONE", 1, 300, 600, "=$C$3", "=$L$3", 0,       20, 8),
         *_std_tie_zones("C4", 300, 600),
 
-        ("C5 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (10-Y20) Fdn + Neck + 40d Lap",    1, 230, 450, "=$C$3", "=$R$3", "=$I$3", 20, 10),
-        ("C5 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — FFR to Top",      1, 230, 450, "=$C$3", "=$L$3", 0,       20, 6),
-        ("C5 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — FFR to Top",      1, 230, 450, "=$C$3", "=$L$3", 0,       16, 4),
+        ("C5 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (10-Y20) Fdn + Neck + 40d Lap",    "F1",   1, 230, 450, "=$C$3", "=$R$3", "=$I$3", 20, 10),
+        ("C5 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — FFR to Top",      "NONE", 1, 230, 450, "=$C$3", "=$L$3", 0,       20, 6),
+        ("C5 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — FFR to Top",      "NONE", 1, 230, 450, "=$C$3", "=$L$3", 0,       16, 4),
         *_std_tie_zones("C5", 230, 450),
 
-        ("C6 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (16-Y20) Fdn + Neck + 40d Lap",    1, 600, 600, "=$C$3", "=$R$3", "=$I$3", 20, 16),
-        ("C6 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (16-Y20) — Upto Top",       1, 600, 600, "=$C$3", "=$L$3", 0,       20, 16),
+        ("C6 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (16-Y20) Fdn + Neck + 40d Lap",    "F3",   1, 600, 600, "=$C$3", "=$R$3", "=$I$3", 20, 16),
+        ("C6 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (16-Y20) — Upto Top",       "NONE", 1, 600, 600, "=$C$3", "=$L$3", 0,       20, 16),
         *_std_tie_zones("C6", 600, 600),
 
-        ("C7 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (16-Y25) Fdn + Neck + 40d Lap",    1, 600, 600, "=$C$3", "=$R$3", "=$I$3", 25, 16),
-        ("C7 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (16-Y25) — Upto Top",       1, 600, 600, "=$C$3", "=$L$3", 0,       25, 16),
+        ("C7 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (16-Y25) Fdn + Neck + 40d Lap",    "CF1",  1, 600, 600, "=$C$3", "=$R$3", "=$I$3", 25, 16),
+        ("C7 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (16-Y25) — Upto Top",       "NONE", 1, 600, 600, "=$C$3", "=$L$3", 0,       25, 16),
         *_std_tie_zones("C7", 600, 600),
 
-        ("C8 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (28-Y32) Fdn + Neck + 40d Lap",    1, 900, 900, "=$C$3", "=$R$3", "=$I$3", 32, 28),
-        ("C8 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (28-Y32) — Upto Top",       1, 900, 900, "=$C$3", "=$L$3", 0,       32, 28),
+        ("C8 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (28-Y32) Fdn + Neck + 40d Lap",    "CF1",  1, 900, 900, "=$C$3", "=$R$3", "=$I$3", 32, 28),
+        ("C8 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (28-Y32) — Upto Top",       "NONE", 1, 900, 900, "=$C$3", "=$L$3", 0,       32, 28),
         *_std_tie_zones("C8", 900, 900),
 
-        ("C9 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (10-Y16) Fdn + Neck + 40d Lap",    1, 230, 450, "=$C$3", "=$R$3", "=$I$3", 16, 10),
-        ("C9 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y16) — FFR to Top",      1, 230, 450, "=$C$3", "=$L$3", 0,       16, 6),
-        ("C9 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y12) — FFR to Top",      1, 230, 450, "=$C$3", "=$L$3", 0,       12, 4),
+        ("C9 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (10-Y16) Fdn + Neck + 40d Lap",    "F1",   1, 230, 450, "=$C$3", "=$R$3", "=$I$3", 16, 10),
+        ("C9 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y16) — FFR to Top",      "NONE", 1, 230, 450, "=$C$3", "=$L$3", 0,       16, 6),
+        ("C9 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y12) — FFR to Top",      "NONE", 1, 230, 450, "=$C$3", "=$L$3", 0,       12, 4),
         *_std_tie_zones("C9", 230, 450),
 
-        ("SC [Zone A Tie]", "SC-01", 90, "MAIN", "Zone A: Stub Column (8-Y12) — Upto Tie Beam",      1, 300, 300, "=$C$3", "=$R$3", "=$I$3", 12, 8),
-        ("SC [Zone A Ties]","SC-51", 135,"TIE",  "Zone A: Stub Neck Ties Y10@100 c/c (Outer Ring)",  1, 300, 300, "=$C$3", "=$R$3", 0,       10, 100),
+        ("SC [Zone A Tie]", "SC-01", 90, "MAIN", "Zone A: Stub Column (8-Y12) — Upto Tie Beam",      "F1",   1, 300, 300, "=$C$3", "=$R$3", "=$I$3", 12, 8),
+        ("SC [Zone A Ties]","SC-51", 135,"TIE",  "Zone A: Stub Neck Ties Y10@100 c/c (Outer Ring)",  "NONE", 1, 300, 300, "=$C$3", "=$R$3", 0,       10, 100),
 
-        # Zone C: Terrace Termination & Parapet Level
-        ("Zone C [Roof]",   "SC-01", 90, "MAIN", "Zone C: Top Floor Roof Beam Anchorage (40d Bend)", 1, 300, 450, "=$C$3", 0,       "=$I$3", 16, 10),
-        ("Zone C [Parapet]","SC-01", 90, "MAIN", "Zone C: Parapet Vertical Bars (Y8 @ 150 c/c /m)", 1, 150, 1000, 25,     "=$U$3", 300,     8,  7),
-        ("Zone C [Parapet]","SC-00", 0,  "MAIN", "Zone C: Parapet Horizontal Bars (Y8 @ 150 c/c /m)",1, 150, 1000, 25,     1000,    0,       8,  7),
+        # Zone C: Terrace Termination & Parapet Level (No mid-height lap splice)
+        ("Zone C [Roof]",   "SC-01", 90, "MAIN", "Zone C: Top Floor Roof Beam Anchorage (40d Bend)", "NONE", 1, 300, 450, "=$C$3", 0,       "=$I$3", 16, 10),
+        ("Zone C [Parapet]","SC-01", 90, "MAIN", "Zone C: Parapet Vertical Bars (Y8 @ 150 c/c /m)", "NONE", 1, 150, 1000, 25,     "=$U$3", 300,     8,  7),
+        ("Zone C [Parapet]","SC-00", 0,  "MAIN", "Zone C: Parapet Horizontal Bars (Y8 @ 150 c/c /m)","NONE", 1, 150, 1000, 25,     1000,    0,       8,  7),
     ]
 
     start_r = 7
     total_rows = len(sample_rows) + BLANK_EXTRA_ROWS
-    input_cols = {2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
-    center_cols = {1, 2, 3, 4, 5, 6, 8, 11, 14, 15, 18, 19}
+    input_cols = {2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17}
+    center_cols = {1, 2, 3, 4, 5, 6, 8, 9, 12, 16, 17, 20, 21}
     left_cols = {7}
     fmt_map = {
-        5: '0"°"', 8: "#,##0", 9: "#,##0", 10: "#,##0", 11: "#,##0", 12: "#,##0", 13: "#,##0",
-        14: "0", 15: "#,##0", 16: "#,##0", 17: "#,##0", 18: "#,##0", 19: "#,##0",
-        20: "0.000", 21: "#,##0.00", 22: "0.000",
+        5: '0"°"', 9: "#,##0", 10: "#,##0", 11: "#,##0", 12: "#,##0", 13: "#,##0", 14: "#,##0", 15: "#,##0",
+        16: "0", 17: "#,##0", 18: "#,##0", 19: "#,##0", 20: "#,##0", 21: "#,##0",
+        22: "0.000", 23: "#,##0.00", 24: "0.000",
     }
-    for ci in range(23, 31):
+    for ci in range(25, 33):
         fmt_map[ci] = "#,##0.00"
 
     for idx in range(total_rows):
@@ -526,49 +528,61 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
             ws.cell(r, 3, rv[1])
             _add_dynamic_shape_pic(wb, ws, r, "Pic_C_", diag_paths, rv[1], rv[2])
             ws.cell(r, 5, rv[2])
-            for off, val in enumerate(rv[3:], start=6):
-                ws.cell(r, off, val)
+            ws.cell(r, 6, rv[3])
+            ws.cell(r, 7, rv[4])
+            ws.cell(r, 8, rv[5])
+            ws.cell(r, 9, rv[6])
+            ws.cell(r, 10, rv[7])
+            ws.cell(r, 11, rv[8])
+            ws.cell(r, 12, rv[9])
+            ws.cell(r, 13, rv[10])
+            ws.cell(r, 15, rv[11])
+            ws.cell(r, 16, rv[12])
+            ws.cell(r, 17, rv[13])
         else:
             ws.cell(r, 3, "SC-01")
             _add_dynamic_shape_pic(wb, ws, r, "Pic_C_", diag_paths, "SC-01", 90)
             ws.cell(r, 5, 90)
             ws.cell(r, 6, "MAIN")
-            ws.cell(r, 11, "=$C$3")
+            ws.cell(r, 8, "F1")
+            ws.cell(r, 12, "=$C$3")
 
-        ws.cell(r, 16, f'=IF(F{r}="MAIN", $F$3*N{r}, 0)')
-        ws.cell(r, 17, f'=IF(F{r}="TIE", MAX(10*N{r}, 75), 0)')
-        ws.cell(r, 18, f'=IF(H{r}>0, IF(F{r}="MAIN", O{r}, IF(O{r}>0, ROUNDDOWN(L{r}/O{r},0)+1, 0)), 0)')
-        ws.cell(r, 19, f"=H{r}*R{r}")
+        ws.cell(r, 14, f'=IF(OR(H{r}="",H{r}="NONE"),0,IFERROR(VLOOKUP(H{r},\'2. Footing BBS (Lx & Ly)\'!$B$5:$K$22,10,FALSE),0))')
+        ws.cell(r, 18, f'=IF(F{r}="MAIN", $F$3*P{r}, 0)')
+        ws.cell(r, 19, f'=IF(F{r}="TIE", MAX(10*P{r}, 75), 0)')
+        ws.cell(r, 20, f'=IF(I{r}>0, IF(F{r}="MAIN", Q{r}, IF(Q{r}>0, ROUNDDOWN(M{r}/Q{r},0)+1, 0)), 0)')
+        ws.cell(r, 21, f"=I{r}*T{r}")
         ws.cell(
             r,
-            20,
-            f'=IF(H{r}>0, IF(F{r}="MAIN", ROUND((L{r}+M{r}+P{r}*$O$3-IF(M{r}>0,{_angle_ded_expr(f"E{r}")}*N{r},0))/1000, 3), '
-            f"ROUND((2*((I{r}-2*K{r})+(J{r}-2*K{r}))+2*Q{r}-(6+2*{_angle_ded_expr(f'E{r}')})*N{r})/1000, 3)), 0)",
+            22,
+            f'=IF(I{r}>0, IF(F{r}="MAIN", ROUND((M{r}+N{r}+O{r}+IF(ISNUMBER(SEARCH("Zone C",B{r})),0,R{r}*$O$3)-IF(O{r}>0,{_angle_ded_expr(f"E{r}")}*P{r},0))/1000, 3), '
+            f"ROUND((2*((J{r}-2*L{r})+(K{r}-2*L{r}))+2*S{r}-(6+2*{_angle_ded_expr(f'E{r}')})*P{r})/1000, 3)), 0)",
         )
-        ws.cell(r, 21, f"=ROUND(S{r}*T{r}, 2)")
-        ws.cell(r, 22, f"=IF(N{r}>0, ROUND((N{r}*N{r})/162.2, 3), 0)")
+        ws.cell(r, 23, f"=ROUND(U{r}*V{r}, 2)")
+        ws.cell(r, 24, f"=IF(P{r}>0, ROUND((P{r}*P{r})/162.2, 3), 0)")
         for d_idx, dia in enumerate(DIAS):
-            ws.cell(r, 23 + d_idx, f"=IF(N{r}={dia}, ROUND(U{r}*V{r}, 2), 0)")
-        ws.cell(r, 30, f"=SUM(W{r}:AC{r})")
+            ws.cell(r, 25 + d_idx, f"=IF(P{r}={dia}, ROUND(W{r}*X{r}, 2), 0)")
+        ws.cell(r, 32, f"=SUM(Y{r}:AE{r})")
 
         _style_row(ws, r, max_col, input_cols, center_cols, left_cols, fmt_map, fig_col=4)
-        ws.cell(r, 20).font = FONT_CALC_BOLD
-        ws.cell(r, 30).font = FONT_CALC_BOLD
+        ws.cell(r, 14).font = FONT_CALC_BOLD
+        ws.cell(r, 22).font = FONT_CALC_BOLD
+        ws.cell(r, 32).font = FONT_CALC_BOLD
 
     end_r = start_r + total_rows - 1
     tot_r = end_r + 1
     ws.row_dimensions[tot_r].height = 24
-    ws.merge_cells(start_row=tot_r, start_column=1, end_row=tot_r, end_column=18)
+    ws.merge_cells(start_row=tot_r, start_column=1, end_row=tot_r, end_column=20)
     lbl = ws.cell(tot_r, 1, "TOTAL COLUMN REINFORCEMENT STEEL (NET WEIGHT)")
     lbl.font = FONT_TOTAL
     lbl.alignment = ALIGN_RIGHT
 
-    for ci in (19, 21, 23, 24, 25, 26, 27, 28, 29, 30):
+    for ci in (21, 23, 25, 26, 27, 28, 29, 30, 31, 32):
         col_let = get_column_letter(ci)
         c = ws.cell(tot_r, ci, f"=SUM({col_let}{start_r}:{col_let}{end_r})")
         c.font = FONT_TOTAL
-        c.alignment = ALIGN_RIGHT if ci != 19 else ALIGN_CENTER
-        c.number_format = "#,##0" if ci == 19 else "#,##0.00"
+        c.alignment = ALIGN_RIGHT if ci != 21 else ALIGN_CENTER
+        c.number_format = "#,##0" if ci == 21 else "#,##0.00"
     for ci in range(1, max_col + 1):
         ws.cell(tot_r, ci).fill = FILL_GREEN if ci == max_col else FILL_TOTAL
         ws.cell(tot_r, ci).border = BORDER_TOTAL
@@ -577,13 +591,14 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
     _add_list_dv(ws, ALL_SHAPES, "C", start_r, end_r)
     _add_list_dv(ws, ALL_ANGLES, "E", start_r, end_r)
     _add_list_dv(ws, "MAIN,TIE", "F", start_r, end_r)
-    _add_list_dv(ws, "8,10,12,16,20,25,32", "N", start_r, end_r)
+    _add_list_dv(ws, "NONE,F1,F2,F3,CF1", "H", start_r, end_r)
+    _add_list_dv(ws, "8,10,12,16,20,25,32", "P", start_r, end_r)
 
     return {
         "sheet_name": ws.title,
         "total_row": tot_r,
-        "dia_cols": [get_column_letter(23 + i) for i in range(len(DIAS))],
-        "total_col": get_column_letter(30),
+        "dia_cols": [get_column_letter(25 + i) for i in range(len(DIAS))],
+        "total_col": get_column_letter(32),
         "default_concrete_m3": round(10.50, 2),
     }
 
