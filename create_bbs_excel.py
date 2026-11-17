@@ -1601,6 +1601,11 @@ def generate_standalone_bbs_workbook() -> list[str]:
     return [root_out, export_out, root_pdf, export_pdf, *trade_files]
 
 
+# Explicit public aliases for cross-module imports
+generate_bbs_master = generate_standalone_bbs_workbook
+export_all_bbs_workbooks = generate_standalone_bbs_workbook
+
+
 if __name__ == "__main__":
     paths = generate_standalone_bbs_workbook()
     for p in paths:

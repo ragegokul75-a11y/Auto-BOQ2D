@@ -24,6 +24,10 @@ import streamlit as st
 from PIL import Image, ImageDraw
 
 from bbs_diagrams import ensure_bbs_diagrams
+import importlib
+import create_bbs_excel as _bbs_mod
+if not hasattr(_bbs_mod, "compile_bbs_workbooks_bytes"):
+    _bbs_mod = importlib.reload(_bbs_mod)
 from create_bbs_excel import (
     OUTPUT_FILENAME as BBS_XLSX_NAME,
     compile_bbs_workbooks_bytes,
@@ -208,11 +212,44 @@ def _ensure_bbs_files():
     return xlsx_path, pdf_path
 
 
+def _safe_read_export_bytes(filename: str) -> bytes:
+    """Read an exported workbook from exports/ or root, auto-generating if missing."""
+    candidates = [
+        os.path.join(BASE_DIR, "exports", filename),
+        os.path.join(BASE_DIR, filename),
+    ]
+    for path in candidates:
+        try:
+            with open(path, "rb") as fh:
+                return fh.read()
+        except (FileNotFoundError, OSError):
+            continue
+    generate_standalone_bbs_workbook()
+    for path in candidates:
+        try:
+            with open(path, "rb") as fh:
+                return fh.read()
+        except (FileNotFoundError, OSError):
+            continue
+    raise FileNotFoundError(f"Could not generate or read {filename}")
+
+
 @st.cache_data(show_spinner=False)
 def _get_compiled_bbs_bytes(params_json: str) -> Dict[str, bytes]:
     import json
 
-    return compile_bbs_workbooks_bytes(json.loads(params_json))
+    try:
+        return compile_bbs_workbooks_bytes(json.loads(params_json))
+    except Exception:
+        trade_names = [
+            BBS_XLSX_NAME,
+            "Footing_BBS_Only.xlsx",
+            "Column_BBS_Only.xlsx",
+            "Beam_BBS_Only.xlsx",
+            "Slab_BBS_Only.xlsx",
+            "Summary_Tender_BOQ.xlsx",
+        ]
+        return {name: _safe_read_export_bytes(name) for name in trade_names}
 
 
 # ---------------------------------------------------------------------------
