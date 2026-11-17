@@ -417,6 +417,43 @@ def build_footing_sheet(wb: Workbook, diag_paths: dict[str, str], params: dict |
     }
 
 
+def generate_column_shorthand_rows(
+    shorthand: str,
+    b_mm: int = 300,
+    d_mm: int = 450,
+    main_bars_ffr: list[tuple[int, int]] | None = None,
+    main_bars_top: list[tuple[int, int]] | None = None,
+) -> list[tuple]:
+    """Expand a shorthand like 'C1: 19 nos on F1, 3 nos on F2' into full Zone A + Zone B openpyxl rows."""
+    import re
+
+    col_mark = shorthand.split(":", 1)[0].strip() if ":" in shorthand else "C1"
+    groups = re.findall(r"(\d+)\s*(?:nos?)?\s*(?:on|@)\s*([A-Za-z0-9_]+)", shorthand, flags=re.IGNORECASE)
+    if not groups:
+        groups = [("1", "F1")]
+    ffr = main_bars_ffr or [(6, 20), (4, 16)]
+    top = main_bars_top or [(10, 16)]
+
+    rows: list[tuple] = []
+    for nos_str, fref in groups:
+        nos = int(nos_str)
+        fref_u = fref.upper()
+        base = f"{col_mark} on {fref_u}"
+        for cnt, dia in ffr:
+            rows.append((f"{base} [Zone A Fdn]", "SC-01", 90, "MAIN", f"Zone A: Starter ({cnt}-Y{dia}) Fdn Pad + Neck + 40d Lap", fref_u, nos, b_mm, d_mm, "=$C$3", "=$R$3", "=$I$3", dia, cnt))
+        for cnt, dia in ffr:
+            rows.append((f"{base} [Zone B FFR]", "SC-00", 0, "MAIN", f"Zone B: Superstructure ({cnt}-Y{dia}) — Upto FFR", fref_u, nos, b_mm, d_mm, "=$C$3", "=$L$3", 0, dia, cnt))
+        for cnt, dia in top:
+            rows.append((f"{base} [Zone B Top]", "SC-00", 0, "MAIN", f"Zone B: Superstructure ({cnt}-Y{dia}) — FFR to Top", fref_u, nos, b_mm, d_mm, "=$C$3", "=$L$3", 0, dia, cnt))
+        rows.extend([
+            (f"{base} [Zone A Neck]", "SC-51", 135, "TIE", "Zone A: Foundation Neck Ties (Y10 @ 100 c/c Outer)", fref_u, nos, b_mm, d_mm, "=$C$3", "=$R$3", 0, 10, 100),
+            (f"{base} [Zone B Bot]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Bot HC/4 (Y8 @ 100 c/c)", fref_u, nos, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
+            (f"{base} [Zone B Top]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Top HC/4 (Y8 @ 100 c/c)", fref_u, nos, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
+            (f"{base} [Zone B Mid]",  "SC-51", 135, "TIE", "Zone B: Lap Splice Ties — Mid HC/2 (Y8 @ 150 c/c)", fref_u, nos, b_mm, d_mm, "=$C$3", "=$L$3/2", 0, 8, 150),
+        ])
+    return rows
+
+
 # =============================================================================
 # SHEET 3: COLUMN BBS (MAIN VERTICAL BARS & LATERAL TIES)
 # =============================================================================
