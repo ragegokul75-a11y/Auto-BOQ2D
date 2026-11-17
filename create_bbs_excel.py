@@ -445,13 +445,32 @@ def generate_column_shorthand_rows(
             rows.append((f"{base} [Zone B FFR]", "SC-00", 0, "MAIN", f"Zone B: Superstructure ({cnt}-Y{dia}) — Upto FFR", fref_u, nos, b_mm, d_mm, "=$C$3", "=$L$3", 0, dia, cnt))
         for cnt, dia in top:
             rows.append((f"{base} [Zone B Top]", "SC-00", 0, "MAIN", f"Zone B: Superstructure ({cnt}-Y{dia}) — FFR to Top", fref_u, nos, b_mm, d_mm, "=$C$3", "=$L$3", 0, dia, cnt))
-        rows.extend([
-            (f"{base} [Zone A Neck]", "SC-51", 135, "TIE", "Zone A: Foundation Neck Ties (Y10 @ 100 c/c Outer)", fref_u, nos, b_mm, d_mm, "=$C$3", "=$R$3", 0, 10, 100),
-            (f"{base} [Zone B Bot]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Bot HC/4 (Y8 @ 100 c/c)", fref_u, nos, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
-            (f"{base} [Zone B Top]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Top HC/4 (Y8 @ 100 c/c)", fref_u, nos, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
-            (f"{base} [Zone B Mid]",  "SC-51", 135, "TIE", "Zone B: Lap Splice Ties — Mid HC/2 (Y8 @ 150 c/c)", fref_u, nos, b_mm, d_mm, "=$C$3", "=$L$3/2", 0, 8, 150),
-        ])
+        rows.extend(_column_tie_block(base, fref_u, nos, b_mm, d_mm))
     return rows
+
+
+def _column_tie_block(base: str, fref: str, nos: int, b_mm: int, d_mm: int) -> list[tuple]:
+    """IS 13920 tie block: Zone A ring over Df (=DF -> Col N), Zone A neck, Zone B HC/4 + HC/2 zones."""
+    return [
+        (f"{base} [Zone A Ring]",  "SC-51", 135, "TIE", "Zone A: Footing Depth Outer Rings (Y10 @ 100 c/c over Df)", fref, nos, b_mm, d_mm, "=$C$3", "=DF",     0, 10, 100),
+        (f"{base} [Zone A Neck]",  "SC-51", 135, "TIE", "Zone A: Foundation Neck Ties (Y8 @ 150 c/c)",              fref, nos, b_mm, d_mm, "=$C$3", "=$R$3",   0, 8,  150),
+        (f"{base} [Zone B Bot]",   "SC-51", 135, "TIE", "Zone B: Confining Ties — Bot HC/4 (Y8 @ 100 c/c)",         fref, nos, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8,  100),
+        (f"{base} [Zone B Top]",   "SC-51", 135, "TIE", "Zone B: Confining Ties — Top HC/4 (Y8 @ 100 c/c)",         fref, nos, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8,  100),
+        (f"{base} [Zone B Mid]",   "SC-51", 135, "TIE", "Zone B: Lap Splice Ties — Mid HC/2 (Y8 @ 150 c/c)",        fref, nos, b_mm, d_mm, "=$C$3", "=$L$3/2", 0, 8,  150),
+    ]
+
+
+def _floor_multiplier_expr(mark: str, btype: str, marks_with_ffr: set[str]) -> str:
+    """Default Floor Multiplier (Col AG). Zone A/C = 1. Zone B ties & single-tier mains = Typical Floors ($X$3).
+    Where a column has a separate 'Upto FFR' tier: FFR tier = 1 floor, 'FFR to Top' tier = $X$3 - 1."""
+    if "Zone B" not in mark:
+        return "1"
+    base = mark.split("[", 1)[0].strip()
+    if btype == "MAIN" and "[Zone B FFR]" in mark:
+        return "1"
+    if btype == "MAIN" and "[Zone B Top]" in mark and base in marks_with_ffr:
+        return "=MAX($X$3-1,0)"
+    return "=$X$3"
 
 
 # =============================================================================
@@ -464,7 +483,7 @@ def build_column_sheet(
     footing_lookup: dict[str, tuple[int, int]] | None = None,
 ) -> dict:
     ws = wb.create_sheet("3. Column BBS (Main & Ties)")
-    max_col = 32  # A..AF
+    max_col = 33  # A..AG (AG = Floor Multiplier)
     _setup_sheet_banner(
         ws,
         max_col,
@@ -478,10 +497,11 @@ def build_column_sheet(
     c_cov = int(p.get("col_cover_mm", 40))
     c_ld = int(p.get("lap_factor_d", 40))
     c_bend = int(p.get("base_bend_mm", 400))
-    c_hc = int(p.get("clear_height_mm", 3300))
+    c_hc = int(p.get("clear_height_mm", 3660))
     c_lap_f = float(p.get("lap_multiplier", 1.0))
     c_neck = int(p.get("neck_height_mm", 1800))
     c_para = int(p.get("parapet_height_mm", 1000))
+    c_floors = int(p.get("typical_floors", 3))
     defaults = [
         (1, "Cover c (mm):", 3, c_cov),
         (4, "Col Ld Factor (×d):", 6, c_ld),
@@ -490,6 +510,7 @@ def build_column_sheet(
         (13, "Lap Factor (1=40d):", 15, c_lap_f),
         (16, "Zone A Neck Ht (mm):", 18, c_neck),
         (19, "Zone C Parapet Ht (mm):", 21, c_para),
+        (22, "Typical Floors (×):", 24, c_floors),
     ]
     for lc, lt, vc, val in defaults:
         ws.merge_cells(start_row=3, start_column=lc, end_row=3, end_column=lc + 1)
@@ -514,7 +535,8 @@ def build_column_sheet(
         "1) Pick Footing Ref (Col H: F1/F2/F3/CF1) — Col N automatically VLOOKUPs Pad Depth Df from Sheet 2!  "
         "2) Enter No. of Cols (Col I).  "
         "3) Zone A Cut = Base L-Bend + VLOOKUP(Df) + Neck + 40d Lap - Bend Ded.  "
-        "4) Zone B Ties = Bot HC/4 (@100), Mid HC/2 (@150), Top HC/4 (@100).",
+        "4) Zone B Ties = Bot HC/4 (@100), Mid HC/2 (@150), Top HC/4 (@100).  "
+        "5) Col AG Floor Multiplier scales identical floors (Typical Floors in X3) — Total Bars U = I × T × AG.",
     )
     g4.font = FONT_NOTE
     g4.fill = FILL_SUB
@@ -554,18 +576,14 @@ def build_column_sheet(
         ("25 mm (kg)", 11),                # 30 AD
         ("32 mm (kg)", 11),                # 31 AE
         ("Total Wt (kg)", 13),             # 32 AF
+        ("Floor Mult (×)", 11),            # 33 AG
     ]
     _write_headers(ws, 6, headers, freeze_col="I")
 
     # Exact Column Schedule from User's Structural Drawing (C1..C9 & SC)
     # Tuple: (Mark, Shape, Angle, Type, Desc, FootingRef, Nos, b, D, Cover, NeckOrClearH, BaseBend, Dia, BarsOrSpacing)
     def _std_tie_zones(mark_base: str, footing_ref: str, b_mm: int, d_mm: int):
-        return [
-            (f"{mark_base} [Zone A Neck]", "SC-51", 135, "TIE", "Zone A: Foundation Neck Ties (Y10 @ 100 c/c Outer)", footing_ref, 1, b_mm, d_mm, "=$C$3", "=$R$3", 0, 10, 100),
-            (f"{mark_base} [Zone B Bot]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Bot HC/4 (Y8 @ 100 c/c)", footing_ref, 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
-            (f"{mark_base} [Zone B Top]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Top HC/4 (Y8 @ 100 c/c)", footing_ref, 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
-            (f"{mark_base} [Zone B Mid]",  "SC-51", 135, "TIE", "Zone B: Lap Splice Ties — Mid HC/2 (Y8 @ 150 c/c)", footing_ref, 1, b_mm, d_mm, "=$C$3", "=$L$3/2", 0, 8, 150),
-        ]
+        return _column_tie_block(mark_base, footing_ref, 1, b_mm, d_mm)
 
     c1_b = int(p.get("c1_b_mm", 300))
     c1_d = int(p.get("c1_d_mm", 450))
@@ -627,7 +645,8 @@ def build_column_sheet(
         *_std_tie_zones("C9", "F1", 230, 450),
 
         ("SC [Zone A Tie]", "SC-01", 90, "MAIN", "Zone A: Stub Column (8-Y12) — Upto Tie Beam",      "SF",   1, 300, 300, "=$C$3", "=$R$3", "=$I$3", 12, 8),
-        ("SC [Zone A Ties]","SC-51", 135,"TIE",  "Zone A: Stub Neck Ties Y10@100 c/c (Outer Ring)",  "SF",   1, 300, 300, "=$C$3", "=$R$3", 0,       10, 100),
+        ("SC [Zone A Ring]","SC-51", 135,"TIE",  "Zone A: Stub Footing Depth Outer Rings (Y10 @ 100 c/c over Df)", "SF", 1, 300, 300, "=$C$3", "=DF", 0, 10, 100),
+        ("SC [Zone A Neck]","SC-51", 135,"TIE",  "Zone A: Stub Neck Ties (Y8 @ 150 c/c)",                         "SF", 1, 300, 300, "=$C$3", "=$R$3", 0, 8, 150),
 
         # Zone C: Terrace Termination & Parapet Level (No mid-height lap splice)
         ("Zone C [Roof]",   "SC-01", 90, "MAIN", "Zone C: Top Floor Roof Beam Anchorage (40d Bend)", "NONE", 1, 300, 450, "=$C$3", 0,       "=$I$3", 16, 10),
@@ -637,13 +656,14 @@ def build_column_sheet(
 
     start_r = 7
     total_rows = len(sample_rows) + BLANK_EXTRA_ROWS
-    input_cols = {2, 3, 5, 6, 7, 8, 10, 11, 12, 13, 15, 16, 17}
-    center_cols = {1, 2, 3, 4, 5, 6, 8, 9, 12, 16, 17, 20, 21}
+    marks_with_ffr = {rv[0].split("[", 1)[0].strip() for rv in sample_rows if "[Zone B FFR]" in rv[0]}
+    input_cols = {2, 3, 5, 6, 7, 8, 10, 11, 12, 13, 15, 16, 17, 33}
+    center_cols = {1, 2, 3, 4, 5, 6, 8, 9, 12, 16, 17, 20, 21, 33}
     left_cols = {7}
     fmt_map = {
         5: '0"°"', 9: "#,##0", 10: "#,##0", 11: "#,##0", 12: "#,##0", 13: "#,##0", 14: "#,##0", 15: "#,##0",
         16: "0", 17: "#,##0", 18: "#,##0", 19: "#,##0", 20: "#,##0", 21: "#,##0",
-        22: "0.000", 23: "#,##0.00", 24: "0.000",
+        22: "0.000", 23: "#,##0.00", 24: "0.000", 33: '0"×"',
     }
     for ci in range(25, 33):
         fmt_map[ci] = "#,##0.00"
@@ -663,10 +683,12 @@ def build_column_sheet(
             ws.cell(r, 10, rv[7])
             ws.cell(r, 11, rv[8])
             ws.cell(r, 12, rv[9])
-            ws.cell(r, 13, rv[10])
+            ws.cell(r, 13, f"=N{r}" if rv[10] == "=DF" else rv[10])
             ws.cell(r, 15, rv[11])
             ws.cell(r, 16, rv[12])
             ws.cell(r, 17, rv[13])
+            fm = _floor_multiplier_expr(rv[0], rv[3], marks_with_ffr)
+            ws.cell(r, 33, int(fm) if fm.isdigit() else fm)
         else:
             ws.cell(r, 3, "SC-01")
             _add_dynamic_shape_pic(wb, ws, r, "Pic_C_", diag_paths, "SC-01", 90)
@@ -674,13 +696,14 @@ def build_column_sheet(
             ws.cell(r, 6, "MAIN")
             ws.cell(r, 8, "F1")
             ws.cell(r, 12, "=$C$3")
+            ws.cell(r, 33, 1)
 
         ws.cell(r, 9, f'=IF(OR(H{r}="",H{r}="NONE"),1,IFERROR(VLOOKUP(H{r},\'2. Footing BBS (Lx & Ly)\'!$B$5:$H$60,7,FALSE),1))')
         ws.cell(r, 14, f'=IF(OR(H{r}="",H{r}="NONE",NOT(ISNUMBER(SEARCH("Zone A",B{r})))),0,IFERROR(VLOOKUP(H{r},\'2. Footing BBS (Lx & Ly)\'!$B$5:$K$60,10,FALSE),0))')
         ws.cell(r, 18, f'=IF(F{r}="MAIN", $F$3*P{r}, 0)')
         ws.cell(r, 19, f'=IF(F{r}="TIE", MAX(10*P{r}, 75), 0)')
         ws.cell(r, 20, f'=IF(I{r}>0, IF(F{r}="MAIN", Q{r}, IF(Q{r}>0, ROUNDDOWN(M{r}/Q{r},0)+1, 0)), 0)')
-        ws.cell(r, 21, f"=I{r}*T{r}")
+        ws.cell(r, 21, f"=I{r}*T{r}*IF(ISNUMBER(AG{r}),AG{r},1)")
         ws.cell(
             r,
             22,
@@ -713,7 +736,7 @@ def build_column_sheet(
         c.alignment = ALIGN_RIGHT if ci != 21 else ALIGN_CENTER
         c.number_format = "#,##0" if ci == 21 else "#,##0.00"
     for ci in range(1, max_col + 1):
-        ws.cell(tot_r, ci).fill = FILL_GREEN if ci == max_col else FILL_TOTAL
+        ws.cell(tot_r, ci).fill = FILL_GREEN if ci == 32 else FILL_TOTAL
         ws.cell(tot_r, ci).border = BORDER_TOTAL
 
     ws.auto_filter.ref = f"A6:{get_column_letter(max_col)}{end_r}"
@@ -731,7 +754,9 @@ def build_column_sheet(
         df_val = flookup.get(fref, (1, 0))[1] if (fref and fref != "NONE" and "Zone A" in mk) else 0
         cov = c_cov if cov_v == "=$C$3" else int(cov_v)
         bend = c_bend if bend_v == "=$I$3" else int(bend_v)
-        if zh_v == "=$R$3":
+        if zh_v == "=DF":
+            zh = float(df_val)
+        elif zh_v == "=$R$3":
             zh = float(c_neck)
         elif zh_v == "=$L$3":
             zh = float(c_hc)
@@ -754,7 +779,14 @@ def build_column_sheet(
             bars_per = int(zh // q_val) + 1 if q_val > 0 else 0
             hook = max(10 * dia, 75)
             cut_m = round((2 * ((b_mm - 2 * cov) + (d_mm - 2 * cov)) + 2 * hook - (6 + 2 * ded_k) * dia) / 1000.0, 3)
-        tot_len = round(nos_cols * bars_per * cut_m, 2)
+        fm_expr = _floor_multiplier_expr(mk, btype, marks_with_ffr)
+        if fm_expr == "=$X$3":
+            fm_mult = c_floors
+        elif fm_expr == "=MAX($X$3-1,0)":
+            fm_mult = max(c_floors - 1, 0)
+        else:
+            fm_mult = int(fm_expr)
+        tot_len = round(nos_cols * bars_per * fm_mult * cut_m, 2)
         unit_wt = round((dia * dia) / 162.2, 3)
         wt = round(tot_len * unit_wt, 2)
         if dia in DIAS:
@@ -765,7 +797,7 @@ def build_column_sheet(
         "total_row": tot_r,
         "dia_cols": [get_column_letter(25 + i) for i in range(len(DIAS))],
         "total_col": get_column_letter(32),
-        "default_concrete_m3": round(10.50, 2),
+        "default_concrete_m3": round(31.50 * (max(c_floors, 1) / 3.0), 2),
         "dia_totals": col_dia_totals,
     }
 

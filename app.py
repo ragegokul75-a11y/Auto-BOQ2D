@@ -269,7 +269,9 @@ if "diag_paths" not in st.session_state:
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ BBS Structural Inputs")
-    sb_hc = st.number_input("Floor Clear Height HC (mm)", value=3300, min_value=2400, max_value=6000, step=100)
+    sh1, sh2 = st.columns(2)
+    sb_hc = sh1.number_input("Floor Height HC (mm)", value=3660, min_value=2400, max_value=6000, step=60)
+    sb_floors = sh2.number_input("Typical Floors (×)", value=3, min_value=1, max_value=20, step=1)
     sb_neck = st.number_input("Zone A Neck Height (mm)", value=1800, min_value=600, max_value=4000, step=100)
     sc1, sc2 = st.columns(2)
     sb_c1_b = sc1.number_input("C1 Width b (mm)", value=300, min_value=200, max_value=1200, step=25)
@@ -307,6 +309,7 @@ with st.sidebar:
 
     bbs_params = {
         "clear_height_mm": int(sb_hc),
+        "typical_floors": int(sb_floors),
         "neck_height_mm": int(sb_neck),
         "c1_b_mm": int(sb_c1_b),
         "c1_d_mm": int(sb_c1_d),
@@ -627,7 +630,7 @@ with tab3:
 
     st.subheader("📥 BBS Download Center (Single-Trade & Complete Master Workbook)")
     st.caption(
-        f"Live-compiled with **HC = {sb_hc} mm**, **Neck = {sb_neck} mm**, "
+        f"Live-compiled with **HC = {sb_hc} mm**, **Floors = {sb_floors}×**, **Neck = {sb_neck} mm**, "
         f"**C1 = {sb_c1_b}×{sb_c1_d} mm**, **Rate = ₹{sb_rate:.0f}/kg**, **Wastage = {sb_wast:.1f}%**."
     )
     tc1, tc2, tc3, tc4, tc5 = st.columns(5)
