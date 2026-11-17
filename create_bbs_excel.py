@@ -440,65 +440,73 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
     _write_headers(ws, 6, headers, freeze_col="I")
 
     # Exact Column Schedule from User's Structural Drawing (C1..C9 & SC)
-    # Tuple: (Mark, Shape, Angle, Type, Desc, Nos, b, D, Cover, ZoneH, BaseBend, Dia, BarsOrSpacing)
-    def _std_tie_zones(mark_base: str, b_mm: int, d_mm: int):
+    # Tuple: (Mark, Shape, Angle, Type, Desc, FootingRef, Nos, b, D, Cover, NeckOrClearH, BaseBend, Dia, BarsOrSpacing)
+    def _std_tie_zones(mark_base: str, footing_ref: str, b_mm: int, d_mm: int):
         return [
-            (f"{mark_base} [Zone A Neck]", "SC-51", 135, "TIE", "Zone A: Foundation Neck Ties (Y10 @ 100 c/c Outer)", "NONE", 1, b_mm, d_mm, "=$C$3", "=$R$3", 0, 10, 100),
-            (f"{mark_base} [Zone B Bot]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Bot HC/4 (Y8 @ 100 c/c)", "NONE", 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
-            (f"{mark_base} [Zone B Top]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Top HC/4 (Y8 @ 100 c/c)", "NONE", 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
-            (f"{mark_base} [Zone B Mid]",  "SC-51", 135, "TIE", "Zone B: Lap Splice Ties — Mid HC/2 (Y8 @ 150 c/c)", "NONE", 1, b_mm, d_mm, "=$C$3", "=$L$3/2", 0, 8, 150),
+            (f"{mark_base} [Zone A Neck]", "SC-51", 135, "TIE", "Zone A: Foundation Neck Ties (Y10 @ 100 c/c Outer)", footing_ref, 1, b_mm, d_mm, "=$C$3", "=$R$3", 0, 10, 100),
+            (f"{mark_base} [Zone B Bot]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Bot HC/4 (Y8 @ 100 c/c)", footing_ref, 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
+            (f"{mark_base} [Zone B Top]",  "SC-51", 135, "TIE", "Zone B: Confining Ties — Top HC/4 (Y8 @ 100 c/c)", footing_ref, 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
+            (f"{mark_base} [Zone B Mid]",  "SC-51", 135, "TIE", "Zone B: Lap Splice Ties — Mid HC/2 (Y8 @ 150 c/c)", footing_ref, 1, b_mm, d_mm, "=$C$3", "=$L$3/2", 0, 8, 150),
         ]
 
     # Tuple: (Mark, Shape, Angle, Type, Desc, FootingRef, Nos, b, D, Cover, NeckOrClearH, BaseBend, Dia, BarsOrSpacing)
     sample_rows = [
-        ("C1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y20) Fdn Pad + Neck + 40d Lap", "F1",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 6),
-        ("C1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y16) Fdn Pad + Neck + 40d Lap", "F1",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 16, 4),
-        ("C1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — Upto FFR",         "NONE", 1, 300, 450, "=$C$3", "=$L$3", 0,       20, 6),
-        ("C1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — Upto FFR",         "NONE", 1, 300, 450, "=$C$3", "=$L$3", 0,       16, 4),
-        ("C1 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y16) — FFR to Top",      "NONE", 1, 300, 450, "=$C$3", "=$L$3", 0,       16, 10),
-        *_std_tie_zones("C1", 300, 450),
+        # Multi-Footing Column Variations: C1 on F1 (6 nos, Df=450) and C1 on F2 (4 nos, Df=500)
+        ("C1 on F1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y20) Fdn Pad + Neck + 40d Lap", "F1",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 6),
+        ("C1 on F1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y16) Fdn Pad + Neck + 40d Lap", "F1",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 16, 4),
+        ("C1 on F1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — Upto FFR",         "F1",   1, 300, 450, "=$C$3", "=$L$3", 0,       20, 6),
+        ("C1 on F1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — Upto FFR",         "F1",   1, 300, 450, "=$C$3", "=$L$3", 0,       16, 4),
+        ("C1 on F1 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y16) — FFR to Top",      "F1",   1, 300, 450, "=$C$3", "=$L$3", 0,       16, 10),
+        *_std_tie_zones("C1 on F1", "F1", 300, 450),
+
+        ("C1 on F2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y20) Fdn Pad + Neck + 40d Lap", "F2",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 6),
+        ("C1 on F2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y16) Fdn Pad + Neck + 40d Lap", "F2",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 16, 4),
+        ("C1 on F2 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — Upto FFR",         "F2",   1, 300, 450, "=$C$3", "=$L$3", 0,       20, 6),
+        ("C1 on F2 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — Upto FFR",         "F2",   1, 300, 450, "=$C$3", "=$L$3", 0,       16, 4),
+        ("C1 on F2 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y16) — FFR to Top",      "F2",   1, 300, 450, "=$C$3", "=$L$3", 0,       16, 10),
+        *_std_tie_zones("C1 on F2", "F2", 300, 450),
 
         ("C2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y25) Fdn Pad + Neck + 40d Lap", "F2",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 25, 6),
         ("C2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y20) Fdn Pad + Neck + 40d Lap", "F2",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 4),
-        ("C2 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y25 + 4-Y20) — Upto FFR", "NONE", 1, 300, 450, "=$C$3", "=$L$3", 0,       25, 6),
-        ("C2 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y20) — FFR to Top",      "NONE", 1, 300, 450, "=$C$3", "=$L$3", 0,       20, 10),
-        *_std_tie_zones("C2", 300, 450),
+        ("C2 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y25 + 4-Y20) — Upto FFR", "F2",   1, 300, 450, "=$C$3", "=$L$3", 0,       25, 6),
+        ("C2 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y20) — FFR to Top",      "F2",   1, 300, 450, "=$C$3", "=$L$3", 0,       20, 10),
+        *_std_tie_zones("C2", "F2", 300, 450),
 
         ("C3 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y25) Fdn + Neck + 40d Lap",     "F2",   1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 25, 4),
         ("C3 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (8-Y20) Fdn + Neck + 40d Lap",     "F2",   1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 20, 8),
-        ("C3 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (12-Y20) — FFR to Top",     "NONE", 1, 300, 600, "=$C$3", "=$L$3", 0,       20, 12),
-        *_std_tie_zones("C3", 300, 600),
+        ("C3 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (12-Y20) — FFR to Top",     "F2",   1, 300, 600, "=$C$3", "=$L$3", 0,       20, 12),
+        *_std_tie_zones("C3", "F2", 300, 600),
 
         ("C4 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (8-Y25) Fdn + Neck + 40d Lap",     "F2",   1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 25, 8),
         ("C4 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y20) Fdn + Neck + 40d Lap",     "F2",   1, 300, 600, "=$C$3", "=$R$3", "=$I$3", 20, 4),
-        ("C4 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y25) — FFR to Top",      "NONE", 1, 300, 600, "=$C$3", "=$L$3", 0,       25, 4),
-        ("C4 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (8-Y20) — FFR to Top",      "NONE", 1, 300, 600, "=$C$3", "=$L$3", 0,       20, 8),
-        *_std_tie_zones("C4", 300, 600),
+        ("C4 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y25) — FFR to Top",      "F2",   1, 300, 600, "=$C$3", "=$L$3", 0,       25, 4),
+        ("C4 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (8-Y20) — FFR to Top",      "F2",   1, 300, 600, "=$C$3", "=$L$3", 0,       20, 8),
+        *_std_tie_zones("C4", "F2", 300, 600),
 
         ("C5 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (10-Y20) Fdn + Neck + 40d Lap",    "F1",   1, 230, 450, "=$C$3", "=$R$3", "=$I$3", 20, 10),
-        ("C5 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — FFR to Top",      "NONE", 1, 230, 450, "=$C$3", "=$L$3", 0,       20, 6),
-        ("C5 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — FFR to Top",      "NONE", 1, 230, 450, "=$C$3", "=$L$3", 0,       16, 4),
-        *_std_tie_zones("C5", 230, 450),
+        ("C5 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — FFR to Top",      "F1",   1, 230, 450, "=$C$3", "=$L$3", 0,       20, 6),
+        ("C5 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — FFR to Top",      "F1",   1, 230, 450, "=$C$3", "=$L$3", 0,       16, 4),
+        *_std_tie_zones("C5", "F1", 230, 450),
 
         ("C6 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (16-Y20) Fdn + Neck + 40d Lap",    "F3",   1, 600, 600, "=$C$3", "=$R$3", "=$I$3", 20, 16),
-        ("C6 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (16-Y20) — Upto Top",       "NONE", 1, 600, 600, "=$C$3", "=$L$3", 0,       20, 16),
-        *_std_tie_zones("C6", 600, 600),
+        ("C6 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (16-Y20) — Upto Top",       "F3",   1, 600, 600, "=$C$3", "=$L$3", 0,       20, 16),
+        *_std_tie_zones("C6", "F3", 600, 600),
 
         ("C7 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (16-Y25) Fdn + Neck + 40d Lap",    "CF1",  1, 600, 600, "=$C$3", "=$R$3", "=$I$3", 25, 16),
-        ("C7 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (16-Y25) — Upto Top",       "NONE", 1, 600, 600, "=$C$3", "=$L$3", 0,       25, 16),
-        *_std_tie_zones("C7", 600, 600),
+        ("C7 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (16-Y25) — Upto Top",       "CF1",  1, 600, 600, "=$C$3", "=$L$3", 0,       25, 16),
+        *_std_tie_zones("C7", "CF1", 600, 600),
 
         ("C8 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (28-Y32) Fdn + Neck + 40d Lap",    "CF1",  1, 900, 900, "=$C$3", "=$R$3", "=$I$3", 32, 28),
-        ("C8 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (28-Y32) — Upto Top",       "NONE", 1, 900, 900, "=$C$3", "=$L$3", 0,       32, 28),
-        *_std_tie_zones("C8", 900, 900),
+        ("C8 [Zone B Flr]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (28-Y32) — Upto Top",       "CF1",  1, 900, 900, "=$C$3", "=$L$3", 0,       32, 28),
+        *_std_tie_zones("C8", "CF1", 900, 900),
 
         ("C9 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (10-Y16) Fdn + Neck + 40d Lap",    "F1",   1, 230, 450, "=$C$3", "=$R$3", "=$I$3", 16, 10),
-        ("C9 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y16) — FFR to Top",      "NONE", 1, 230, 450, "=$C$3", "=$L$3", 0,       16, 6),
-        ("C9 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y12) — FFR to Top",      "NONE", 1, 230, 450, "=$C$3", "=$L$3", 0,       12, 4),
-        *_std_tie_zones("C9", 230, 450),
+        ("C9 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y16) — FFR to Top",      "F1",   1, 230, 450, "=$C$3", "=$L$3", 0,       16, 6),
+        ("C9 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y12) — FFR to Top",      "F1",   1, 230, 450, "=$C$3", "=$L$3", 0,       12, 4),
+        *_std_tie_zones("C9", "F1", 230, 450),
 
         ("SC [Zone A Tie]", "SC-01", 90, "MAIN", "Zone A: Stub Column (8-Y12) — Upto Tie Beam",      "F1",   1, 300, 300, "=$C$3", "=$R$3", "=$I$3", 12, 8),
-        ("SC [Zone A Ties]","SC-51", 135,"TIE",  "Zone A: Stub Neck Ties Y10@100 c/c (Outer Ring)",  "NONE", 1, 300, 300, "=$C$3", "=$R$3", 0,       10, 100),
+        ("SC [Zone A Ties]","SC-51", 135,"TIE",  "Zone A: Stub Neck Ties Y10@100 c/c (Outer Ring)",  "F1",   1, 300, 300, "=$C$3", "=$R$3", 0,       10, 100),
 
         # Zone C: Terrace Termination & Parapet Level (No mid-height lap splice)
         ("Zone C [Roof]",   "SC-01", 90, "MAIN", "Zone C: Top Floor Roof Beam Anchorage (40d Bend)", "NONE", 1, 300, 450, "=$C$3", 0,       "=$I$3", 16, 10),
@@ -508,7 +516,7 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
 
     start_r = 7
     total_rows = len(sample_rows) + BLANK_EXTRA_ROWS
-    input_cols = {2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17}
+    input_cols = {2, 3, 5, 6, 7, 8, 10, 11, 12, 13, 15, 16, 17}
     center_cols = {1, 2, 3, 4, 5, 6, 8, 9, 12, 16, 17, 20, 21}
     left_cols = {7}
     fmt_map = {
@@ -531,7 +539,6 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
             ws.cell(r, 6, rv[3])
             ws.cell(r, 7, rv[4])
             ws.cell(r, 8, rv[5])
-            ws.cell(r, 9, rv[6])
             ws.cell(r, 10, rv[7])
             ws.cell(r, 11, rv[8])
             ws.cell(r, 12, rv[9])
@@ -547,7 +554,8 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
             ws.cell(r, 8, "F1")
             ws.cell(r, 12, "=$C$3")
 
-        ws.cell(r, 14, f'=IF(OR(H{r}="",H{r}="NONE"),0,IFERROR(VLOOKUP(H{r},\'2. Footing BBS (Lx & Ly)\'!$B$5:$K$22,10,FALSE),0))')
+        ws.cell(r, 9, f'=IF(OR(H{r}="",H{r}="NONE"),1,IFERROR(VLOOKUP(H{r},\'2. Footing BBS (Lx & Ly)\'!$B$5:$H$60,7,FALSE),1))')
+        ws.cell(r, 14, f'=IF(OR(H{r}="",H{r}="NONE",NOT(ISNUMBER(SEARCH("Zone A",B{r})))),0,IFERROR(VLOOKUP(H{r},\'2. Footing BBS (Lx & Ly)\'!$B$5:$K$60,10,FALSE),0))')
         ws.cell(r, 18, f'=IF(F{r}="MAIN", $F$3*P{r}, 0)')
         ws.cell(r, 19, f'=IF(F{r}="TIE", MAX(10*P{r}, 75), 0)')
         ws.cell(r, 20, f'=IF(I{r}>0, IF(F{r}="MAIN", Q{r}, IF(Q{r}>0, ROUNDDOWN(M{r}/Q{r},0)+1, 0)), 0)')
@@ -1014,7 +1022,7 @@ def build_shape_codes_sheet(wb: Workbook, diag_paths: dict[str, str]) -> None:
 # =============================================================================
 # SHEET 1: SUMMARY & TENDER BOQ ABSTRACT (LIVE LINKS TO SHEETS 2..5)
 # =============================================================================
-def build_summary_sheet(wb: Workbook, refs: list[dict]) -> None:
+def build_summary_sheet(wb: Workbook, refs: list[dict], static_summary_values: list[list[float]] | None = None) -> None:
     ws = wb.create_sheet("1. Summary & Tender BOQ (kg)", 0)
     max_col = 11  # A..K
     _setup_sheet_banner(
@@ -1083,11 +1091,13 @@ def build_summary_sheet(wb: Workbook, refs: list[dict]) -> None:
         c2.alignment = ALIGN_LEFT
 
         for d_idx, col_let in enumerate(ref["dia_cols"]):
-            dc = ws.cell(r, 3 + d_idx, f"='{sname}'!{col_let}{trow}")
+            val = static_summary_values[idx][d_idx] if static_summary_values else f"='{sname}'!{col_let}{trow}"
+            dc = ws.cell(r, 3 + d_idx, val)
             dc.alignment = ALIGN_RIGHT
             dc.number_format = "#,##0.00"
 
-        tc = ws.cell(r, 10, f"='{sname}'!{ref['total_col']}{trow}")
+        tot_val = f"=SUM(C{r}:I{r})" if static_summary_values else f"='{sname}'!{ref['total_col']}{trow}"
+        tc = ws.cell(r, 10, tot_val)
         tc.font = FONT_CALC_BOLD
         tc.alignment = ALIGN_RIGHT
         tc.number_format = "#,##0.00"
@@ -1268,6 +1278,113 @@ def build_summary_sheet(wb: Workbook, refs: list[dict]) -> None:
             ws.cell(rr, ci).border = BORDER_GRID
 
 
+def _bind_pictures_and_export_pdf(xlsx_path: str, pdf_path: str | None = None) -> None:
+    ps1 = os.path.join(BASE_DIR, "link_excel_pictures.ps1")
+    if os.path.exists(ps1):
+        try:
+            subprocess.run(
+                ["powershell", "-ExecutionPolicy", "Bypass", "-File", ps1, "-WorkbookPath", xlsx_path],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except Exception as exc:
+            print(f"Warning: Could not run Excel Linked Picture binder for {xlsx_path}:", exc)
+
+    if pdf_path:
+        pdf_ps1 = os.path.join(BASE_DIR, "export_xlsx_to_pdf.ps1")
+        if os.path.exists(pdf_ps1):
+            try:
+                subprocess.run(
+                    ["powershell", "-ExecutionPolicy", "Bypass", "-File", pdf_ps1, "-XlsxPath", xlsx_path, "-PdfPath", pdf_path],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except Exception as exc:
+                print(f"Warning: Could not auto-export PDF for {xlsx_path}:", exc)
+
+
+def generate_individual_trade_workbooks(
+    diag_paths: dict[str, str],
+    refs: list[dict],
+    master_xlsx_path: str,
+) -> list[str]:
+    """Generate standalone trade-specific workbooks in exports/ with zero broken links."""
+    from openpyxl import load_workbook
+
+    generated: list[str] = []
+
+    # 1. Footing_BBS_Only.xlsx
+    wb_f = Workbook()
+    d_ws = wb_f.active
+    build_footing_sheet(wb_f, diag_paths)
+    build_shape_codes_sheet(wb_f, diag_paths)
+    wb_f.remove(d_ws)
+    f_xlsx = os.path.join(EXPORTS_DIR, "Footing_BBS_Only.xlsx")
+    wb_f.save(f_xlsx)
+    _bind_pictures_and_export_pdf(f_xlsx)
+    generated.append(f_xlsx)
+
+    # 2. Column_BBS_Only.xlsx (includes Sheet 2 lookup table + Sheet 6 diagrams so VLOOKUP & Pictures never #REF!)
+    wb_c = Workbook()
+    d_ws = wb_c.active
+    ws_f_ref = build_footing_sheet(wb_c, diag_paths)
+    ws_c_ref = build_column_sheet(wb_c, diag_paths)
+    build_shape_codes_sheet(wb_c, diag_paths)
+    wb_c.remove(d_ws)
+    col_ws = wb_c[ws_c_ref["sheet_name"]]
+    ftg_ws = wb_c[ws_f_ref["sheet_name"]]
+    shp_ws = wb_c["6. Shape Codes & Bar Details"]
+    wb_c._sheets = [col_ws, ftg_ws, shp_ws]
+    wb_c.active = 0
+    c_xlsx = os.path.join(EXPORTS_DIR, "Column_BBS_Only.xlsx")
+    wb_c.save(c_xlsx)
+    _bind_pictures_and_export_pdf(c_xlsx)
+    generated.append(c_xlsx)
+
+    # 3. Beam_BBS_Only.xlsx
+    wb_b = Workbook()
+    d_ws = wb_b.active
+    build_beam_sheet(wb_b, diag_paths)
+    build_shape_codes_sheet(wb_b, diag_paths)
+    wb_b.remove(d_ws)
+    b_xlsx = os.path.join(EXPORTS_DIR, "Beam_BBS_Only.xlsx")
+    wb_b.save(b_xlsx)
+    _bind_pictures_and_export_pdf(b_xlsx)
+    generated.append(b_xlsx)
+
+    # 4. Slab_BBS_Only.xlsx
+    wb_s = Workbook()
+    d_ws = wb_s.active
+    build_slab_sheet(wb_s, diag_paths)
+    build_shape_codes_sheet(wb_s, diag_paths)
+    wb_s.remove(d_ws)
+    s_xlsx = os.path.join(EXPORTS_DIR, "Slab_BBS_Only.xlsx")
+    wb_s.save(s_xlsx)
+    _bind_pictures_and_export_pdf(s_xlsx)
+    generated.append(s_xlsx)
+
+    # 5. Summary_Tender_BOQ.xlsx (self-contained with evaluated master sheet totals in C8:I11)
+    wb_master_val = load_workbook(master_xlsx_path, data_only=True)
+    ws_master_sum = wb_master_val["1. Summary & Tender BOQ (kg)"]
+    static_vals: list[list[float]] = []
+    for r in range(8, 12):
+        row_vals = [float(ws_master_sum.cell(r, c).value or 0.0) for c in range(3, 10)]
+        static_vals.append(row_vals)
+    wb_master_val.close()
+
+    wb_sum = Workbook()
+    d_ws = wb_sum.active
+    build_summary_sheet(wb_sum, refs, static_summary_values=static_vals)
+    wb_sum.remove(d_ws)
+    sum_xlsx = os.path.join(EXPORTS_DIR, "Summary_Tender_BOQ.xlsx")
+    wb_sum.save(sum_xlsx)
+    generated.append(sum_xlsx)
+
+    return generated
+
+
 def generate_standalone_bbs_workbook() -> list[str]:
     os.makedirs(EXPORTS_DIR, exist_ok=True)
     diag_paths = ensure_bbs_diagrams()
@@ -1280,7 +1397,8 @@ def generate_standalone_bbs_workbook() -> list[str]:
     b_ref = build_beam_sheet(wb, diag_paths)
     s_ref = build_slab_sheet(wb, diag_paths)
     build_shape_codes_sheet(wb, diag_paths)
-    build_summary_sheet(wb, [f_ref, c_ref, b_ref, s_ref])
+    refs = [f_ref, c_ref, b_ref, s_ref]
+    build_summary_sheet(wb, refs)
 
     wb.remove(default_ws)
 
@@ -1291,35 +1409,13 @@ def generate_standalone_bbs_workbook() -> list[str]:
     export_pdf = os.path.join(EXPORTS_DIR, pdf_filename)
     wb.save(root_out)
 
-    ps1 = os.path.join(BASE_DIR, "link_excel_pictures.ps1")
-    if os.path.exists(ps1):
-        try:
-            subprocess.run(
-                ["powershell", "-ExecutionPolicy", "Bypass", "-File", ps1, "-WorkbookPath", root_out],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except Exception as exc:
-            print("Warning: Could not run Excel Linked Picture binder:", exc)
-
+    _bind_pictures_and_export_pdf(root_out, root_pdf)
     shutil.copy2(root_out, export_out)
+    if os.path.exists(root_pdf):
+        shutil.copy2(root_pdf, export_pdf)
 
-    pdf_ps1 = os.path.join(BASE_DIR, "export_xlsx_to_pdf.ps1")
-    if os.path.exists(pdf_ps1):
-        try:
-            subprocess.run(
-                ["powershell", "-ExecutionPolicy", "Bypass", "-File", pdf_ps1, "-XlsxPath", root_out, "-PdfPath", root_pdf],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            if os.path.exists(root_pdf):
-                shutil.copy2(root_pdf, export_pdf)
-        except Exception as exc:
-            print("Warning: Could not auto-export BBS PDF:", exc)
-
-    return [root_out, export_out, root_pdf, export_pdf]
+    trade_files = generate_individual_trade_workbooks(diag_paths, refs, root_out)
+    return [root_out, export_out, root_pdf, export_pdf, *trade_files]
 
 
 if __name__ == "__main__":

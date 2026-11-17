@@ -18,7 +18,8 @@ try {
 
     foreach ($sname in $sheetMap.Keys) {
         $prefix = $sheetMap[$sname]
-        $ws = $wb.Sheets.Item($sname)
+        $ws = $null
+        try { $ws = $wb.Sheets.Item($sname) } catch { continue }
         foreach ($shp in $ws.Shapes) {
             $row = $shp.TopLeftCell.Row
             if ($row -ge 5) {
@@ -28,6 +29,7 @@ try {
         }
     }
 
+    $xl.CalculateFull()
     $wb.Save()
     $wb.Close($false)
 }
