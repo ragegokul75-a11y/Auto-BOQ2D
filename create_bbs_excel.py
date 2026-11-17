@@ -436,47 +436,53 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
 
     # Exact Column Schedule from User's Structural Drawing (C1..C9 & SC)
     # Tuple: (Mark, Shape, Angle, Type, Desc, Nos, b, D, Cover, ZoneH, BaseBend, Dia, BarsOrSpacing)
+    def _std_tie_zones(mark_base: str, b_mm: int, d_mm: int):
+        return [
+            (f"{mark_base} (Bot HC/4)", "SC-51", 135, "TIE", "Confining Ties — Bottom HC/4 (Y8 @ 100 c/c)", 1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
+            (f"{mark_base} (Top HC/4)", "SC-51", 135, "TIE", "Confining Ties — Top HC/4 (Y8 @ 100 c/c)",    1, b_mm, d_mm, "=$C$3", "=$L$3/4", 0, 8, 100),
+            (f"{mark_base} (Mid HC/2)", "SC-51", 135, "TIE", "Lap Splice Ties — Mid-Height HC/2 (Y8 @ 150 c/c)", 1, b_mm, d_mm, "=$C$3", "=$L$3/2", 0, 8, 150),
+        ]
+
     sample_rows = [
         ("C1 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (6-Y20) — Footing to FFR", 1, 300, 450, "=$C$3", "=$L$3", "=$I$3", 20, 6),
         ("C1 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (4-Y16) — Footing to FFR", 1, 300, 450, "=$C$3", "=$L$3", "=$I$3", 16, 4),
         ("C1 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (10-Y16) — FFR to Top",    1, 300, 450, "=$C$3", "=$L$3", 0,       16, 10),
-        ("C1 (Ties)",     "SC-51", 135,"TIE",  "Confining Ties Y8@100 c/c (HC/4 Top+Bot)", 1, 300, 450, "=$C$3", "=$L$3/2", 0, 8, 100),
-        ("C1 (Ties)",     "SC-51", 135,"TIE",  "Mid-Height Lap Ties Y8@150 c/c (HC/2)",     1, 300, 450, "=$C$3", "=$L$3/2", 0, 8, 150),
+        *_std_tie_zones("C1", 300, 450),
 
         ("C2 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (6-Y25) — Footing to FFR", 1, 300, 450, "=$C$3", "=$L$3", "=$I$3", 25, 6),
         ("C2 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (4-Y20) — Footing to FFR", 1, 300, 450, "=$C$3", "=$L$3", "=$I$3", 20, 4),
         ("C2 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (10-Y20) — FFR to Top",    1, 300, 450, "=$C$3", "=$L$3", 0,       20, 10),
-        ("C2 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 300, 450, "=$C$3", "=$L$3", 0,       8, 125),
+        *_std_tie_zones("C2", 300, 450),
 
         ("C3 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (4-Y25) — Footing to FFR", 1, 300, 600, "=$C$3", "=$L$3", "=$I$3", 25, 4),
         ("C3 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (8-Y20) — Footing to FFR", 1, 300, 600, "=$C$3", "=$L$3", "=$I$3", 20, 8),
         ("C3 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (12-Y20) — FFR to Top",    1, 300, 600, "=$C$3", "=$L$3", 0,       20, 12),
-        ("C3 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 300, 600, "=$C$3", "=$L$3", 0,       8, 125),
+        *_std_tie_zones("C3", 300, 600),
 
         ("C4 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (8-Y25) — Footing to FFR", 1, 300, 600, "=$C$3", "=$L$3", "=$I$3", 25, 8),
         ("C4 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (4-Y20) — Footing to FFR", 1, 300, 600, "=$C$3", "=$L$3", "=$I$3", 20, 4),
         ("C4 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (4-Y25) — FFR to Top",     1, 300, 600, "=$C$3", "=$L$3", 0,       25, 4),
         ("C4 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (8-Y20) — FFR to Top",     1, 300, 600, "=$C$3", "=$L$3", 0,       20, 8),
-        ("C4 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 300, 600, "=$C$3", "=$L$3", 0,       8, 125),
+        *_std_tie_zones("C4", 300, 600),
 
         ("C5 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (10-Y20) — Footing to FFR",1, 230, 450, "=$C$3", "=$L$3", "=$I$3", 20, 10),
         ("C5 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (6-Y20) — FFR to Top",     1, 230, 450, "=$C$3", "=$L$3", 0,       20, 6),
         ("C5 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (4-Y16) — FFR to Top",     1, 230, 450, "=$C$3", "=$L$3", 0,       16, 4),
-        ("C5 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 230, 450, "=$C$3", "=$L$3", 0,       8, 125),
+        *_std_tie_zones("C5", 230, 450),
 
         ("C6 (Upto Top)", "SC-01", 90, "MAIN", "Main Bars (16-Y20) — Full Height",   1, 600, 600, "=$C$3", "=$L$3", "=$I$3", 20, 16),
-        ("C6 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 600, 600, "=$C$3", "=$L$3", 0,       8, 125),
+        *_std_tie_zones("C6", 600, 600),
 
         ("C7 (Upto Top)", "SC-01", 90, "MAIN", "Main Bars (16-Y25) — Full Height",   1, 600, 600, "=$C$3", "=$L$3", "=$I$3", 25, 16),
-        ("C7 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 600, 600, "=$C$3", "=$L$3", 0,       8, 125),
+        *_std_tie_zones("C7", 600, 600),
 
         ("C8 (Upto Top)", "SC-01", 90, "MAIN", "Main Bars (28-Y32) — Heavy Column",  1, 900, 900, "=$C$3", "=$L$3", "=$I$3", 32, 28),
-        ("C8 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 900, 900, "=$C$3", "=$L$3", 0,       8, 125),
+        *_std_tie_zones("C8", 900, 900),
 
         ("C9 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (10-Y16) — Footing to FFR",1, 230, 450, "=$C$3", "=$L$3", "=$I$3", 16, 10),
         ("C9 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (6-Y16) — FFR to Top",     1, 230, 450, "=$C$3", "=$L$3", 0,       16, 6),
         ("C9 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (4-Y12) — FFR to Top",     1, 230, 450, "=$C$3", "=$L$3", 0,       12, 4),
-        ("C9 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 230, 450, "=$C$3", "=$L$3", 0,       8, 125),
+        *_std_tie_zones("C9", 230, 450),
 
         ("SC (Upto Tie)", "SC-01", 90, "MAIN", "Stub Column (8-Y12) — Upto Tie Beam",1, 300, 300, "=$C$3", 1800,    "=$I$3", 12, 8),
         ("SC (Ties)",     "SC-51", 135,"TIE",  "Stub Ties Y10@100 c/c (Outer Ring)",   1, 300, 300, "=$C$3", 1800,    0,       10, 100),
