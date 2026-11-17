@@ -354,68 +354,145 @@ def build_footing_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
 # =============================================================================
 def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
     ws = wb.create_sheet("3. Column BBS (Main & Ties)")
-    max_col = 29  # A..AC
+    max_col = 30  # A..AD
     _setup_sheet_banner(
         ws,
         max_col,
-        "COLUMN BAR BENDING SCHEDULE — DYNAMIC SHAPE FIGURE, ANGLE (°), BAR TYPE & MAIN/TIES (IS 2502 / IS 13920)",
-        "YELLOW CELLS = Change Shape Code or Angle (0°/45°/90°/135°/180°) and Shape Figure & Hook/Bend Deductions update automatically!",
+        "COLUMN BAR BENDING SCHEDULE — BEGINNER-FRIENDLY (IS 13920 / SP 34 / M25 / Fe-500)",
+        "Matched to your RC Column Drawing: Auto Ld = 40×d | 135° Hook = MAX(10d, 75mm) | Confining Zone (HC/4 Top & Bot) @ 100 c/c | Lap Zone (HC/2) @ 150 c/c.",
     )
 
+    # Row 3: Drawing Defaults / Constants (Yellow = Editable once for whole building)
+    ws.row_dimensions[3].height = 22
+    defaults = [
+        (1, "Cover c (mm):", 3, 40),
+        (4, "Col Ld Factor (×d):", 6, 40),
+        (7, "Footing L-Bend (mm):", 9, 400),
+        (10, "Floor Height HC (mm):", 12, 3300),
+        (13, "Lap Factor (1=Full 40d, 0.5=50%):", 15, 1.0),
+    ]
+    for lc, lt, vc, val in defaults:
+        ws.merge_cells(start_row=3, start_column=lc, end_row=3, end_column=lc + 1)
+        lcell = ws.cell(3, lc, lt)
+        lcell.font = FONT_CALC_BOLD
+        lcell.fill = FILL_CALC
+        lcell.alignment = ALIGN_RIGHT
+        lcell.border = BORDER_GRID
+        ws.cell(3, lc + 1).border = BORDER_GRID
+        vcell = ws.cell(3, vc, val)
+        vcell.font = FONT_INPUT
+        vcell.fill = FILL_INPUT
+        vcell.alignment = ALIGN_CENTER
+        vcell.border = BORDER_GRID
+
+    # Row 4: Plain-English Beginner Guide
+    ws.merge_cells(start_row=4, start_column=1, end_row=4, end_column=max_col)
+    g4 = ws.cell(
+        4,
+        1,
+        "HOW TO USE (NO BBS KNOWLEDGE NEEDED):  "
+        "1) Enter 'No. of Cols' (Col H) from your plan for C1–C9 & SC.  "
+        "2) Yellow cells already match your drawing's C.S. bars (e.g., C1 Upto FFR = 6-Y20 + 4-Y16).  "
+        "3) Col P (Ld=40d), Col Q (Hook=MAX(10d,75)), & Cut Length (Col T) calculate automatically!",
+    )
+    g4.font = FONT_NOTE
+    g4.fill = FILL_SUB
+    g4.alignment = ALIGN_LEFT
+    ws.row_dimensions[4].height = 22
+
     headers = [
-        ("S.No", 6),                    # 1 A
-        ("Col Mark", 10),               # 2 B
-        ("Shape Code", 10),             # 3 C
-        ("Shape Figure", 19),           # 4 D
-        ("Angle (°)", 9),               # 5 E
-        ("Bar Type", 11),               # 6 F
-        ("Bar Description", 29),        # 7 G
-        ("No. of Cols", 10),            # 8 H
-        ("Width b (mm)", 10),           # 9 I
-        ("Depth D (mm)", 10),           # 10 J
-        ("Cover c (mm)", 9),            # 11 K
-        ("Height / Zone H (mm)", 12),   # 12 L
-        ("Footing L-Bend Ld (mm)", 11), # 13 M
-        ("Lap Length (mm)", 11),        # 14 N
-        ("Dia d (mm)", 9),              # 15 O
-        ("Bars/Col or Tie Spacing", 12),# 16 P
-        ("Calc Bars / Col", 11),        # 17 Q
-        ("Total Bars", 10),             # 18 R
-        ("Cutting Length (m)", 12),     # 19 S
-        ("Total Length (m)", 12),       # 20 T
-        ("Unit Wt (kg/m)", 11),         # 21 U
-        ("8 mm (kg)", 11),              # 22 V
-        ("10 mm (kg)", 11),             # 23 W
-        ("12 mm (kg)", 11),             # 24 X
-        ("16 mm (kg)", 11),             # 25 Y
-        ("20 mm (kg)", 11),             # 26 Z
-        ("25 mm (kg)", 11),             # 27 AA
-        ("32 mm (kg)", 11),             # 28 AB
-        ("Total Wt (kg)", 13),          # 29 AC
+        ("S.No", 5),                       # 1 A
+        ("Col Mark & Floor", 15),          # 2 B
+        ("Shape Code", 10),                # 3 C
+        ("Shape Figure", 19),              # 4 D
+        ("Angle (°)", 9),                  # 5 E
+        ("Bar Type", 10),                  # 6 F
+        ("Plain-English Bar Description", 34), # 7 G
+        ("No. of Cols", 10),               # 8 H
+        ("Width b (mm)", 10),              # 9 I
+        ("Depth D (mm)", 10),              # 10 J
+        ("Cover c (mm)", 9),               # 11 K
+        ("Height / Zone H (mm)", 12),      # 12 L
+        ("Base L-Bend (mm)", 11),          # 13 M
+        ("Dia d (mm)", 9),                 # 14 N
+        ("Bars/Col or Spacing", 12),       # 15 O
+        ("Auto Ld=40d (mm)", 11),          # 16 P
+        ("135° Hook MAX(10d,75)", 12),     # 17 Q
+        ("Calc Bars / Col", 11),           # 18 R
+        ("Total Bars", 10),                # 19 S
+        ("Cutting Length (m)", 12),        # 20 T
+        ("Total Length (m)", 12),          # 21 U
+        ("Unit Wt (kg/m)", 11),            # 22 V
+        ("8 mm (kg)", 11),                 # 23 W
+        ("10 mm (kg)", 11),                # 24 X
+        ("12 mm (kg)", 11),                # 25 Y
+        ("16 mm (kg)", 11),                # 26 Z
+        ("20 mm (kg)", 11),                # 27 AA
+        ("25 mm (kg)", 11),                # 28 AB
+        ("32 mm (kg)", 11),                # 29 AC
+        ("Total Wt (kg)", 13),             # 30 AD
     ]
-    _write_headers(ws, 4, headers, freeze_col="H")
+    _write_headers(ws, 6, headers, freeze_col="H")
 
+    # Exact Column Schedule from User's Structural Drawing (C1..C9 & SC)
+    # Tuple: (Mark, Shape, Angle, Type, Desc, Nos, b, D, Cover, ZoneH, BaseBend, Dia, BarsOrSpacing)
     sample_rows = [
-        ("C1", "SC-01", 90, "MAIN", "Main Vertical Corner Bars (L-Foot + Lap)", 6, 300, 450, 40, 4200, 450, 800, 16, 4),
-        ("C1", "SC-01", 90, "MAIN", "Main Vertical Side Face Bars (L-Foot + Lap)", 6, 300, 450, 40, 4200, 450, 600, 12, 4),
-        ("C1", "SC-51", 135, "TIE", "Confining Zone Closed Ties (135° Hooks)", 6, 300, 450, 40, 1800, 0, 0, 8, 100),
-        ("C1", "SC-51", 135, "TIE", "Mid-Height Zone Closed Ties (135° Hooks)", 6, 300, 450, 40, 2400, 0, 0, 8, 175),
-        ("C2", "SC-01", 90, "MAIN", "Main Vertical Heavy Bars (L-Foot + Lap)", 4, 300, 600, 40, 4200, 500, 1000, 20, 8),
-        ("C2", "SC-51", 135, "TIE", "Outer Master Closed Ties (135° Hooks)", 4, 300, 600, 40, 4200, 0, 0, 8, 150),
-        ("C3", "SC-01", 90, "MAIN", "Main Vertical Bars (L-Foot + Lap)", 2, 230, 380, 40, 4200, 400, 600, 12, 6),
-        ("C3", "SC-51", 135, "TIE", "Lateral Closed Ties (135° Hooks)", 2, 230, 380, 40, 4200, 0, 0, 8, 150),
+        ("C1 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (6-Y20) — Footing to FFR", 1, 300, 450, "=$C$3", "=$L$3", "=$I$3", 20, 6),
+        ("C1 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (4-Y16) — Footing to FFR", 1, 300, 450, "=$C$3", "=$L$3", "=$I$3", 16, 4),
+        ("C1 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (10-Y16) — FFR to Top",    1, 300, 450, "=$C$3", "=$L$3", 0,       16, 10),
+        ("C1 (Ties)",     "SC-51", 135,"TIE",  "Confining Ties Y8@100 c/c (HC/4 Top+Bot)", 1, 300, 450, "=$C$3", "=$L$3/2", 0, 8, 100),
+        ("C1 (Ties)",     "SC-51", 135,"TIE",  "Mid-Height Lap Ties Y8@150 c/c (HC/2)",     1, 300, 450, "=$C$3", "=$L$3/2", 0, 8, 150),
+
+        ("C2 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (6-Y25) — Footing to FFR", 1, 300, 450, "=$C$3", "=$L$3", "=$I$3", 25, 6),
+        ("C2 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (4-Y20) — Footing to FFR", 1, 300, 450, "=$C$3", "=$L$3", "=$I$3", 20, 4),
+        ("C2 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (10-Y20) — FFR to Top",    1, 300, 450, "=$C$3", "=$L$3", 0,       20, 10),
+        ("C2 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 300, 450, "=$C$3", "=$L$3", 0,       8, 125),
+
+        ("C3 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (4-Y25) — Footing to FFR", 1, 300, 600, "=$C$3", "=$L$3", "=$I$3", 25, 4),
+        ("C3 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (8-Y20) — Footing to FFR", 1, 300, 600, "=$C$3", "=$L$3", "=$I$3", 20, 8),
+        ("C3 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (12-Y20) — FFR to Top",    1, 300, 600, "=$C$3", "=$L$3", 0,       20, 12),
+        ("C3 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 300, 600, "=$C$3", "=$L$3", 0,       8, 125),
+
+        ("C4 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (8-Y25) — Footing to FFR", 1, 300, 600, "=$C$3", "=$L$3", "=$I$3", 25, 8),
+        ("C4 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (4-Y20) — Footing to FFR", 1, 300, 600, "=$C$3", "=$L$3", "=$I$3", 20, 4),
+        ("C4 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (4-Y25) — FFR to Top",     1, 300, 600, "=$C$3", "=$L$3", 0,       25, 4),
+        ("C4 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (8-Y20) — FFR to Top",     1, 300, 600, "=$C$3", "=$L$3", 0,       20, 8),
+        ("C4 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 300, 600, "=$C$3", "=$L$3", 0,       8, 125),
+
+        ("C5 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (10-Y20) — Footing to FFR",1, 230, 450, "=$C$3", "=$L$3", "=$I$3", 20, 10),
+        ("C5 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (6-Y20) — FFR to Top",     1, 230, 450, "=$C$3", "=$L$3", 0,       20, 6),
+        ("C5 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (4-Y16) — FFR to Top",     1, 230, 450, "=$C$3", "=$L$3", 0,       16, 4),
+        ("C5 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 230, 450, "=$C$3", "=$L$3", 0,       8, 125),
+
+        ("C6 (Upto Top)", "SC-01", 90, "MAIN", "Main Bars (16-Y20) — Full Height",   1, 600, 600, "=$C$3", "=$L$3", "=$I$3", 20, 16),
+        ("C6 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 600, 600, "=$C$3", "=$L$3", 0,       8, 125),
+
+        ("C7 (Upto Top)", "SC-01", 90, "MAIN", "Main Bars (16-Y25) — Full Height",   1, 600, 600, "=$C$3", "=$L$3", "=$I$3", 25, 16),
+        ("C7 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 600, 600, "=$C$3", "=$L$3", 0,       8, 125),
+
+        ("C8 (Upto Top)", "SC-01", 90, "MAIN", "Main Bars (28-Y32) — Heavy Column",  1, 900, 900, "=$C$3", "=$L$3", "=$I$3", 32, 28),
+        ("C8 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 900, 900, "=$C$3", "=$L$3", 0,       8, 125),
+
+        ("C9 (Upto FFR)", "SC-01", 90, "MAIN", "Main Bars (10-Y16) — Footing to FFR",1, 230, 450, "=$C$3", "=$L$3", "=$I$3", 16, 10),
+        ("C9 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (6-Y16) — FFR to Top",     1, 230, 450, "=$C$3", "=$L$3", 0,       16, 6),
+        ("C9 (FFR-Top)",  "SC-00", 0,  "MAIN", "Main Bars (4-Y12) — FFR to Top",     1, 230, 450, "=$C$3", "=$L$3", 0,       12, 4),
+        ("C9 (Ties)",     "SC-51", 135,"TIE",  "Confining + Lap Ties Y8@100/150 avg",  1, 230, 450, "=$C$3", "=$L$3", 0,       8, 125),
+
+        ("SC (Upto Tie)", "SC-01", 90, "MAIN", "Stub Column (8-Y12) — Upto Tie Beam",1, 300, 300, "=$C$3", 1800,    "=$I$3", 12, 8),
+        ("SC (Ties)",     "SC-51", 135,"TIE",  "Stub Ties Y10@100 c/c (Outer Ring)",   1, 300, 300, "=$C$3", 1800,    0,       10, 100),
     ]
 
-    start_r = 5
+    start_r = 7
     total_rows = len(sample_rows) + BLANK_EXTRA_ROWS
-    input_cols = {2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-    center_cols = {1, 2, 3, 4, 5, 6, 8, 11, 15, 16, 17, 18}
+    input_cols = {2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+    center_cols = {1, 2, 3, 4, 5, 6, 8, 11, 14, 15, 18, 19}
     left_cols = {7}
     fmt_map = {
-        5: '0"°"', 8: "#,##0", 9: "#,##0", 10: "#,##0", 11: "#,##0", 12: "#,##0", 13: "#,##0", 14: "#,##0",
-        15: "0", 16: "#,##0", 17: "#,##0", 18: "#,##0", 19: "0.000", 20: "#,##0.00", 21: "0.000",
+        5: '0"°"', 8: "#,##0", 9: "#,##0", 10: "#,##0", 11: "#,##0", 12: "#,##0", 13: "#,##0",
+        14: "0", 15: "#,##0", 16: "#,##0", 17: "#,##0", 18: "#,##0", 19: "#,##0",
+        20: "0.000", 21: "#,##0.00", 22: "0.000",
     }
-    for ci in range(22, 30):
+    for ci in range(23, 31):
         fmt_map[ci] = "#,##0.00"
 
     for idx in range(total_rows):
@@ -434,56 +511,58 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
             _add_dynamic_shape_pic(wb, ws, r, "Pic_C_", diag_paths, "SC-01", 90)
             ws.cell(r, 5, 90)
             ws.cell(r, 6, "MAIN")
-            ws.cell(r, 11, 40)
+            ws.cell(r, 11, "=$C$3")
 
-        ws.cell(r, 17, f'=IF(H{r}>0, IF(F{r}="MAIN", P{r}, IF(P{r}>0, ROUNDDOWN(L{r}/P{r},0)+1, 0)), 0)')
-        ws.cell(r, 18, f"=H{r}*Q{r}")
+        ws.cell(r, 16, f'=IF(F{r}="MAIN", $F$3*N{r}, 0)')
+        ws.cell(r, 17, f'=IF(F{r}="TIE", MAX(10*N{r}, 75), 0)')
+        ws.cell(r, 18, f'=IF(H{r}>0, IF(F{r}="MAIN", O{r}, IF(O{r}>0, ROUNDDOWN(L{r}/O{r},0)+1, 0)), 0)')
+        ws.cell(r, 19, f"=H{r}*R{r}")
         ws.cell(
             r,
-            19,
-            f'=IF(H{r}>0, IF(F{r}="MAIN", ROUND((L{r}+M{r}+N{r}-IF(M{r}>0,{_angle_ded_expr(f"E{r}")}*O{r},0))/1000, 3), '
-            f"ROUND((2*((I{r}-2*K{r})+(J{r}-2*K{r}))+20*O{r}-(6+2*{_angle_ded_expr(f'E{r}')})*O{r})/1000, 3)), 0)",
+            20,
+            f'=IF(H{r}>0, IF(F{r}="MAIN", ROUND((L{r}+M{r}+P{r}*$O$3-IF(M{r}>0,{_angle_ded_expr(f"E{r}")}*N{r},0))/1000, 3), '
+            f"ROUND((2*((I{r}-2*K{r})+(J{r}-2*K{r}))+2*Q{r}-(6+2*{_angle_ded_expr(f'E{r}')})*N{r})/1000, 3)), 0)",
         )
-        ws.cell(r, 20, f"=ROUND(R{r}*S{r}, 2)")
-        ws.cell(r, 21, f"=IF(O{r}>0, ROUND((O{r}*O{r})/162.2, 3), 0)")
+        ws.cell(r, 21, f"=ROUND(S{r}*T{r}, 2)")
+        ws.cell(r, 22, f"=IF(N{r}>0, ROUND((N{r}*N{r})/162.2, 3), 0)")
         for d_idx, dia in enumerate(DIAS):
-            ws.cell(r, 22 + d_idx, f"=IF(O{r}={dia}, ROUND(T{r}*U{r}, 2), 0)")
-        ws.cell(r, 29, f"=SUM(V{r}:AB{r})")
+            ws.cell(r, 23 + d_idx, f"=IF(N{r}={dia}, ROUND(U{r}*V{r}, 2), 0)")
+        ws.cell(r, 30, f"=SUM(W{r}:AC{r})")
 
         _style_row(ws, r, max_col, input_cols, center_cols, left_cols, fmt_map, fig_col=4)
-        ws.cell(r, 19).font = FONT_CALC_BOLD
-        ws.cell(r, 29).font = FONT_CALC_BOLD
+        ws.cell(r, 20).font = FONT_CALC_BOLD
+        ws.cell(r, 30).font = FONT_CALC_BOLD
 
     end_r = start_r + total_rows - 1
     tot_r = end_r + 1
     ws.row_dimensions[tot_r].height = 24
-    ws.merge_cells(start_row=tot_r, start_column=1, end_row=tot_r, end_column=17)
+    ws.merge_cells(start_row=tot_r, start_column=1, end_row=tot_r, end_column=18)
     lbl = ws.cell(tot_r, 1, "TOTAL COLUMN REINFORCEMENT STEEL (NET WEIGHT)")
     lbl.font = FONT_TOTAL
     lbl.alignment = ALIGN_RIGHT
 
-    for ci in (18, 20, 22, 23, 24, 25, 26, 27, 28, 29):
+    for ci in (19, 21, 23, 24, 25, 26, 27, 28, 29, 30):
         col_let = get_column_letter(ci)
         c = ws.cell(tot_r, ci, f"=SUM({col_let}{start_r}:{col_let}{end_r})")
         c.font = FONT_TOTAL
-        c.alignment = ALIGN_RIGHT if ci != 18 else ALIGN_CENTER
-        c.number_format = "#,##0" if ci == 18 else "#,##0.00"
+        c.alignment = ALIGN_RIGHT if ci != 19 else ALIGN_CENTER
+        c.number_format = "#,##0" if ci == 19 else "#,##0.00"
     for ci in range(1, max_col + 1):
         ws.cell(tot_r, ci).fill = FILL_GREEN if ci == max_col else FILL_TOTAL
         ws.cell(tot_r, ci).border = BORDER_TOTAL
 
-    ws.auto_filter.ref = f"A4:{get_column_letter(max_col)}{end_r}"
+    ws.auto_filter.ref = f"A6:{get_column_letter(max_col)}{end_r}"
     _add_list_dv(ws, ALL_SHAPES, "C", start_r, end_r)
     _add_list_dv(ws, ALL_ANGLES, "E", start_r, end_r)
     _add_list_dv(ws, "MAIN,TIE", "F", start_r, end_r)
-    _add_list_dv(ws, "8,10,12,16,20,25,32", "O", start_r, end_r)
+    _add_list_dv(ws, "8,10,12,16,20,25,32", "N", start_r, end_r)
 
     return {
         "sheet_name": ws.title,
         "total_row": tot_r,
-        "dia_cols": [get_column_letter(22 + i) for i in range(len(DIAS))],
-        "total_col": get_column_letter(29),
-        "default_concrete_m3": round((6 * 0.30 * 0.45 * 4.2) + (4 * 0.30 * 0.60 * 4.2) + (2 * 0.23 * 0.38 * 4.2), 2),
+        "dia_cols": [get_column_letter(23 + i) for i in range(len(DIAS))],
+        "total_col": get_column_letter(30),
+        "default_concrete_m3": round(10.50, 2),
     }
 
 
