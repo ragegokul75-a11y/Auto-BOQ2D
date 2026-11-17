@@ -282,12 +282,12 @@ with st.sidebar:
         st.caption("Edit Nos, Dimensions & Pad Depth Df (mm) — Column VLOOKUP updates automatically.")
         f_cfg: Dict[str, Dict[str, int]] = {}
         f_defaults = {
-            "F1": (6, 1800, 1500, 450),
-            "F2": (4, 2100, 1800, 500),
-            "F3": (2, 1500, 1500, 400),
-            "F4": (0, 1800, 1800, 450),
-            "F5": (0, 2000, 2000, 500),
-            "F6": (0, 2200, 2200, 550),
+            "F1": (6, 1800, 1800, 525),
+            "F2": (4, 2100, 2100, 600),
+            "F3": (2, 2400, 2400, 680),
+            "F4": (2, 2700, 2700, 750),
+            "F5": (2, 3000, 3000, 830),
+            "F6": (2, 3200, 3200, 830),
         }
         for mk, (d_nos, d_lx, d_ly, d_df) in f_defaults.items():
             st.markdown(f"**{mk}**")

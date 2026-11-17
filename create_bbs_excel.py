@@ -255,16 +255,32 @@ def build_footing_sheet(wb: Workbook, diag_paths: dict[str, str], params: dict |
     _write_headers(ws, 4, headers, freeze_col="H")
 
     sample_rows = [
-        ("F1", "SC-02", 90, "BOT-MESH-LX", "Longitudinal Bottom Mesh (along Lx)", 6, 1800, 1500, 450, 50, "Lx", 12, 150),
-        ("F1", "SC-02", 90, "BOT-MESH-LY", "Transverse Bottom Mesh (along Ly)", 6, 1800, 1500, 450, 50, "Ly", 12, 150),
-        ("F2", "SC-02", 90, "BOT-MESH-LX", "Longitudinal Bottom Mesh (along Lx)", 4, 2100, 1800, 500, 50, "Lx", 16, 150),
-        ("F2", "SC-02", 90, "BOT-MESH-LY", "Transverse Bottom Mesh (along Ly)", 4, 2100, 1800, 500, 50, "Ly", 12, 150),
-        ("F3", "SC-02", 90, "BOT-MESH-LX", "Longitudinal Bottom Mesh (along Lx)", 2, 1500, 1500, 400, 50, "Lx", 10, 150),
-        ("F3", "SC-02", 90, "BOT-MESH-LY", "Transverse Bottom Mesh (along Ly)", 2, 1500, 1500, 400, 50, "Ly", 10, 150),
-        ("CF1", "SC-02", 90, "BOT-MESH-LX", "Combined Footing Bottom Mesh (Lx)", 1, 4200, 2000, 600, 50, "Lx", 16, 125),
-        ("CF1", "SC-02", 90, "BOT-MESH-LY", "Combined Footing Bottom Mesh (Ly)", 1, 4200, 2000, 600, 50, "Ly", 12, 150),
-        ("CF1", "SC-02", 90, "TOP-MAT-LX", "Combined Footing Top Mat (along Lx)", 1, 4200, 2000, 600, 50, "Lx", 12, 150),
-        ("CF1", "SC-02", 90, "TOP-MAT-LY", "Combined Footing Top Mat (along Ly)", 1, 4200, 2000, 600, 50, "Ly", 10, 150),
+        ("F1", "SC-02", 90, "BOT-MESH-LX", "Longitudinal Bottom Mesh (along Lx) Y10@125", 6, 1800, 1800, 525, 50, "Lx", 10, 125),
+        ("F1", "SC-02", 90, "BOT-MESH-LY", "Transverse Bottom Mesh (along Ly) Y10@125",   6, 1800, 1800, 525, 50, "Ly", 10, 125),
+        ("F2", "SC-02", 90, "BOT-MESH-LX", "Longitudinal Bottom Mesh (along Lx) Y10@100", 4, 2100, 2100, 600, 50, "Lx", 10, 100),
+        ("F2", "SC-02", 90, "BOT-MESH-LY", "Transverse Bottom Mesh (along Ly) Y10@100",   4, 2100, 2100, 600, 50, "Ly", 10, 100),
+        ("F3", "SC-02", 90, "BOT-MESH-LX", "Longitudinal Bottom Mesh (along Lx) Y12@125", 2, 2400, 2400, 680, 50, "Lx", 12, 125),
+        ("F3", "SC-02", 90, "BOT-MESH-LY", "Transverse Bottom Mesh (along Ly) Y12@125",   2, 2400, 2400, 680, 50, "Ly", 12, 125),
+        ("F3", "SC-02", 90, "TOP-MAT-LX",  "Top Mat Mesh (along Lx) Y10@150",             2, 2400, 2400, 680, 50, "Lx", 10, 150),
+        ("F3", "SC-02", 90, "TOP-MAT-LY",  "Top Mat Mesh (along Ly) Y10@150",             2, 2400, 2400, 680, 50, "Ly", 10, 150),
+        ("F4", "SC-02", 90, "BOT-MESH-LX", "Longitudinal Bottom Mesh (along Lx) Y12@100", 2, 2700, 2700, 750, 50, "Lx", 12, 100),
+        ("F4", "SC-02", 90, "BOT-MESH-LY", "Transverse Bottom Mesh (along Ly) Y12@100",   2, 2700, 2700, 750, 50, "Ly", 12, 100),
+        ("F4", "SC-02", 90, "TOP-MAT-LX",  "Top Mat Mesh (along Lx) Y10@100",             2, 2700, 2700, 750, 50, "Lx", 10, 100),
+        ("F4", "SC-02", 90, "TOP-MAT-LY",  "Top Mat Mesh (along Ly) Y10@100",             2, 2700, 2700, 750, 50, "Ly", 10, 100),
+        ("F5", "SC-02", 90, "BOT-MESH-LX", "Longitudinal Bottom Mesh (along Lx) Y12@100", 2, 3000, 3000, 830, 50, "Lx", 12, 100),
+        ("F5", "SC-02", 90, "BOT-MESH-LY", "Transverse Bottom Mesh (along Ly) Y12@100",   2, 3000, 3000, 830, 50, "Ly", 12, 100),
+        ("F5", "SC-02", 90, "TOP-MAT-LX",  "Top Mat Mesh (along Lx) Y12@200",             2, 3000, 3000, 830, 50, "Lx", 12, 200),
+        ("F5", "SC-02", 90, "TOP-MAT-LY",  "Top Mat Mesh (along Ly) Y12@200",             2, 3000, 3000, 830, 50, "Ly", 12, 200),
+        ("F6", "SC-02", 90, "BOT-MESH-LX", "Longitudinal Bottom Mesh (along Lx) Y12@100", 2, 3200, 3200, 830, 50, "Lx", 12, 100),
+        ("F6", "SC-02", 90, "BOT-MESH-LY", "Transverse Bottom Mesh (along Ly) Y12@100",   2, 3200, 3200, 830, 50, "Ly", 12, 100),
+        ("F6", "SC-02", 90, "TOP-MAT-LX",  "Top Mat Mesh (along Lx) Y12@200",             2, 3200, 3200, 830, 50, "Lx", 12, 200),
+        ("F6", "SC-02", 90, "TOP-MAT-LY",  "Top Mat Mesh (along Ly) Y12@200",             2, 3200, 3200, 830, 50, "Ly", 12, 200),
+        ("SF", "SC-02", 90, "BOT-MESH-LX", "Stub Footing Bottom Mesh (along Lx) Y10@150", 2, 1500, 1500, 380, 50, "Lx", 10, 150),
+        ("SF", "SC-02", 90, "BOT-MESH-LY", "Stub Footing Bottom Mesh (along Ly) Y10@150", 2, 1500, 1500, 380, 50, "Ly", 10, 150),
+        ("CF1","SC-02", 90, "BOT-MESH-LX", "Combined Footing Bottom Mesh (Lx) Y12@100",   1, 3600, 3600, 750, 50, "Lx", 12, 100),
+        ("CF1","SC-02", 90, "BOT-MESH-LY", "Combined Footing Bottom Mesh (Ly) Y12@100",   1, 3600, 3600, 750, 50, "Ly", 12, 100),
+        ("CF1","SC-02", 90, "TOP-MAT-LX",  "Combined Footing Top Mat (Lx) Y12@150",       1, 3600, 3600, 750, 50, "Lx", 12, 150),
+        ("CF1","SC-02", 90, "TOP-MAT-LY",  "Combined Footing Top Mat (Ly) Y12@150",       1, 3600, 3600, 750, 50, "Ly", 12, 150),
     ]
     if params:
         f_cov = int(params.get("footing_cover_mm", 50))
@@ -371,10 +387,12 @@ def build_footing_sheet(wb: Workbook, diag_paths: dict[str, str], params: dict |
 
     dia_totals = [0.0] * len(DIAS)
     footing_lookup: dict[str, tuple[int, int]] = {}
+    footing_conc_m3 = 0.0
     for rv in sample_rows:
         mk, _, ang, _, _, nos_f, lx, ly, df, cov, sdir, dia, spc = rv
         if mk not in footing_lookup:
             footing_lookup[mk] = (int(nos_f), int(df))
+            footing_conc_m3 += nos_f * (lx / 1000.0) * (ly / 1000.0) * (df / 1000.0)
         if nos_f > 0 and spc > 0:
             span = (lx - 2 * cov) if sdir == "Lx" else (ly - 2 * cov)
             leg = max(0, df - 2 * cov)
@@ -393,7 +411,7 @@ def build_footing_sheet(wb: Workbook, diag_paths: dict[str, str], params: dict |
         "total_row": tot_r,
         "dia_cols": [get_column_letter(24 + i) for i in range(len(DIAS))],
         "total_col": get_column_letter(31),
-        "default_concrete_m3": round((6 * 1.8 * 1.5 * 0.45) + (4 * 2.1 * 1.8 * 0.5) + (2 * 1.5 * 1.5 * 0.4) + (1 * 4.2 * 2.0 * 0.6), 2),
+        "default_concrete_m3": round(footing_conc_m3, 2),
         "dia_totals": dia_totals,
         "footing_lookup": footing_lookup,
     }
@@ -571,8 +589,8 @@ def build_column_sheet(
         ("C9 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y12) — FFR to Top",      "F1",   1, 230, 450, "=$C$3", "=$L$3", 0,       12, 4),
         *_std_tie_zones("C9", "F1", 230, 450),
 
-        ("SC [Zone A Tie]", "SC-01", 90, "MAIN", "Zone A: Stub Column (8-Y12) — Upto Tie Beam",      "F1",   1, 300, 300, "=$C$3", "=$R$3", "=$I$3", 12, 8),
-        ("SC [Zone A Ties]","SC-51", 135,"TIE",  "Zone A: Stub Neck Ties Y10@100 c/c (Outer Ring)",  "F1",   1, 300, 300, "=$C$3", "=$R$3", 0,       10, 100),
+        ("SC [Zone A Tie]", "SC-01", 90, "MAIN", "Zone A: Stub Column (8-Y12) — Upto Tie Beam",      "SF",   1, 300, 300, "=$C$3", "=$R$3", "=$I$3", 12, 8),
+        ("SC [Zone A Ties]","SC-51", 135,"TIE",  "Zone A: Stub Neck Ties Y10@100 c/c (Outer Ring)",  "SF",   1, 300, 300, "=$C$3", "=$R$3", 0,       10, 100),
 
         # Zone C: Terrace Termination & Parapet Level (No mid-height lap splice)
         ("Zone C [Roof]",   "SC-01", 90, "MAIN", "Zone C: Top Floor Roof Beam Anchorage (40d Bend)", "NONE", 1, 300, 450, "=$C$3", 0,       "=$I$3", 16, 10),
@@ -665,10 +683,10 @@ def build_column_sheet(
     _add_list_dv(ws, ALL_SHAPES, "C", start_r, end_r)
     _add_list_dv(ws, ALL_ANGLES, "E", start_r, end_r)
     _add_list_dv(ws, "MAIN,TIE", "F", start_r, end_r)
-    _add_list_dv(ws, "NONE,F1,F2,F3,F4,F5,F6,CF1", "H", start_r, end_r)
+    _add_list_dv(ws, "NONE,F1,F2,F3,F4,F5,F6,SF,CF1", "H", start_r, end_r)
     _add_list_dv(ws, "8,10,12,16,20,25,32", "P", start_r, end_r)
 
-    flookup = footing_lookup or {"F1": (6, 450), "F2": (4, 500), "F3": (2, 400), "CF1": (1, 600)}
+    flookup = footing_lookup or {"F1": (6, 525), "F2": (4, 600), "F3": (2, 680), "F4": (2, 750), "F5": (2, 830), "F6": (2, 830), "SF": (2, 380), "CF1": (1, 750)}
     col_dia_totals = [0.0] * len(DIAS)
     for rv in sample_rows:
         mk, _, ang, btype, _, fref, _, b_mm, d_mm, cov_v, zh_v, bend_v, dia, q_val = rv
