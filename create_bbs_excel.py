@@ -209,7 +209,7 @@ def _style_row(
 # =============================================================================
 # SHEET 2: FOOTING BBS (Lx & Ly)
 # =============================================================================
-def build_footing_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
+def build_footing_sheet(wb: Workbook, diag_paths: dict[str, str], params: dict | None = None) -> dict:
     ws = wb.create_sheet("2. Footing BBS (Lx & Ly)")
     max_col = 31  # A..AE
     _setup_sheet_banner(
@@ -266,6 +266,35 @@ def build_footing_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
         ("CF1", "SC-02", 90, "TOP-MAT-LX", "Combined Footing Top Mat (along Lx)", 1, 4200, 2000, 600, 50, "Lx", 12, 150),
         ("CF1", "SC-02", 90, "TOP-MAT-LY", "Combined Footing Top Mat (along Ly)", 1, 4200, 2000, 600, 50, "Ly", 10, 150),
     ]
+    if params:
+        f_cov = int(params.get("footing_cover_mm", 50))
+        f_ov = params.get("footings") or {}
+        updated = []
+        seen_marks = set()
+        for row in sample_rows:
+            mk = row[0]
+            seen_marks.add(mk)
+            if mk in f_ov:
+                ov = f_ov[mk]
+                updated.append((
+                    mk, row[1], row[2], row[3], row[4],
+                    int(ov.get("nos", row[5])),
+                    int(ov.get("lx", row[6])),
+                    int(ov.get("ly", row[7])),
+                    int(ov.get("df", row[8])),
+                    f_cov, row[10], row[11], row[12],
+                ))
+            else:
+                updated.append((*row[:9], f_cov, *row[10:]))
+        for mk, ov in f_ov.items():
+            if mk not in seen_marks and int(ov.get("nos", 0)) > 0:
+                nos_v = int(ov["nos"])
+                lx_v = int(ov.get("lx", 1800))
+                ly_v = int(ov.get("ly", 1500))
+                df_v = int(ov.get("df", 450))
+                updated.append((mk, "SC-02", 90, "BOT-MESH-LX", "Longitudinal Bottom Mesh (along Lx)", nos_v, lx_v, ly_v, df_v, f_cov, "Lx", 12, 150))
+                updated.append((mk, "SC-02", 90, "BOT-MESH-LY", "Transverse Bottom Mesh (along Ly)", nos_v, lx_v, ly_v, df_v, f_cov, "Ly", 12, 150))
+        sample_rows = updated
 
     start_r = 5
     total_rows = len(sample_rows) + BLANK_EXTRA_ROWS
@@ -340,19 +369,45 @@ def build_footing_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
     _add_list_dv(ws, "Lx,Ly", "M", start_r, end_r)
     _add_list_dv(ws, "8,10,12,16,20,25,32", "N", start_r, end_r)
 
+    dia_totals = [0.0] * len(DIAS)
+    footing_lookup: dict[str, tuple[int, int]] = {}
+    for rv in sample_rows:
+        mk, _, ang, _, _, nos_f, lx, ly, df, cov, sdir, dia, spc = rv
+        if mk not in footing_lookup:
+            footing_lookup[mk] = (int(nos_f), int(df))
+        if nos_f > 0 and spc > 0:
+            span = (lx - 2 * cov) if sdir == "Lx" else (ly - 2 * cov)
+            leg = max(0, df - 2 * cov)
+            ded_k = 2 if ang == 90 else (1 if ang == 45 else (3 if ang == 135 else (4 if ang == 180 else 0)))
+            ded = 2 * ded_k * dia
+            cut_m = round((span + 2 * leg - ded) / 1000.0, 3)
+            bars_per = int(((ly - 2 * cov) if sdir == "Lx" else (lx - 2 * cov)) // spc) + 1
+            tot_len = round(cut_m * nos_f * bars_per, 2)
+            unit_wt = round((dia * dia) / 162.2, 3)
+            wt = round(tot_len * unit_wt, 2)
+            if dia in DIAS:
+                dia_totals[DIAS.index(dia)] = round(dia_totals[DIAS.index(dia)] + wt, 2)
+
     return {
         "sheet_name": ws.title,
         "total_row": tot_r,
         "dia_cols": [get_column_letter(24 + i) for i in range(len(DIAS))],
         "total_col": get_column_letter(31),
         "default_concrete_m3": round((6 * 1.8 * 1.5 * 0.45) + (4 * 2.1 * 1.8 * 0.5) + (2 * 1.5 * 1.5 * 0.4) + (1 * 4.2 * 2.0 * 0.6), 2),
+        "dia_totals": dia_totals,
+        "footing_lookup": footing_lookup,
     }
 
 
 # =============================================================================
 # SHEET 3: COLUMN BBS (MAIN VERTICAL BARS & LATERAL TIES)
 # =============================================================================
-def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
+def build_column_sheet(
+    wb: Workbook,
+    diag_paths: dict[str, str],
+    params: dict | None = None,
+    footing_lookup: dict[str, tuple[int, int]] | None = None,
+) -> dict:
     ws = wb.create_sheet("3. Column BBS (Main & Ties)")
     max_col = 32  # A..AF
     _setup_sheet_banner(
@@ -364,14 +419,22 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
 
     # Row 3: Drawing Defaults / Constants (Yellow = Editable once for whole building)
     ws.row_dimensions[3].height = 22
+    p = params or {}
+    c_cov = int(p.get("col_cover_mm", 40))
+    c_ld = int(p.get("lap_factor_d", 40))
+    c_bend = int(p.get("base_bend_mm", 400))
+    c_hc = int(p.get("clear_height_mm", 3300))
+    c_lap_f = float(p.get("lap_multiplier", 1.0))
+    c_neck = int(p.get("neck_height_mm", 1800))
+    c_para = int(p.get("parapet_height_mm", 1000))
     defaults = [
-        (1, "Cover c (mm):", 3, 40),
-        (4, "Col Ld Factor (×d):", 6, 40),
-        (7, "Footing L-Bend (mm):", 9, 400),
-        (10, "Floor Height HC (mm):", 12, 3300),
-        (13, "Lap Factor (1=40d):", 15, 1.0),
-        (16, "Zone A Neck Ht (mm):", 18, 1800),
-        (19, "Zone C Parapet Ht (mm):", 21, 1000),
+        (1, "Cover c (mm):", 3, c_cov),
+        (4, "Col Ld Factor (×d):", 6, c_ld),
+        (7, "Footing L-Bend (mm):", 9, c_bend),
+        (10, "Floor Height HC (mm):", 12, c_hc),
+        (13, "Lap Factor (1=40d):", 15, c_lap_f),
+        (16, "Zone A Neck Ht (mm):", 18, c_neck),
+        (19, "Zone C Parapet Ht (mm):", 21, c_para),
     ]
     for lc, lt, vc, val in defaults:
         ws.merge_cells(start_row=3, start_column=lc, end_row=3, end_column=lc + 1)
@@ -449,22 +512,25 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
             (f"{mark_base} [Zone B Mid]",  "SC-51", 135, "TIE", "Zone B: Lap Splice Ties — Mid HC/2 (Y8 @ 150 c/c)", footing_ref, 1, b_mm, d_mm, "=$C$3", "=$L$3/2", 0, 8, 150),
         ]
 
+    c1_b = int(p.get("c1_b_mm", 300))
+    c1_d = int(p.get("c1_d_mm", 450))
+
     # Tuple: (Mark, Shape, Angle, Type, Desc, FootingRef, Nos, b, D, Cover, NeckOrClearH, BaseBend, Dia, BarsOrSpacing)
     sample_rows = [
         # Multi-Footing Column Variations: C1 on F1 (6 nos, Df=450) and C1 on F2 (4 nos, Df=500)
-        ("C1 on F1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y20) Fdn Pad + Neck + 40d Lap", "F1",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 6),
-        ("C1 on F1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y16) Fdn Pad + Neck + 40d Lap", "F1",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 16, 4),
-        ("C1 on F1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — Upto FFR",         "F1",   1, 300, 450, "=$C$3", "=$L$3", 0,       20, 6),
-        ("C1 on F1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — Upto FFR",         "F1",   1, 300, 450, "=$C$3", "=$L$3", 0,       16, 4),
-        ("C1 on F1 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y16) — FFR to Top",      "F1",   1, 300, 450, "=$C$3", "=$L$3", 0,       16, 10),
-        *_std_tie_zones("C1 on F1", "F1", 300, 450),
+        ("C1 on F1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y20) Fdn Pad + Neck + 40d Lap", "F1",   1, c1_b, c1_d, "=$C$3", "=$R$3", "=$I$3", 20, 6),
+        ("C1 on F1 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y16) Fdn Pad + Neck + 40d Lap", "F1",   1, c1_b, c1_d, "=$C$3", "=$R$3", "=$I$3", 16, 4),
+        ("C1 on F1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — Upto FFR",         "F1",   1, c1_b, c1_d, "=$C$3", "=$L$3", 0,       20, 6),
+        ("C1 on F1 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — Upto FFR",         "F1",   1, c1_b, c1_d, "=$C$3", "=$L$3", 0,       16, 4),
+        ("C1 on F1 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y16) — FFR to Top",      "F1",   1, c1_b, c1_d, "=$C$3", "=$L$3", 0,       16, 10),
+        *_std_tie_zones("C1 on F1", "F1", c1_b, c1_d),
 
-        ("C1 on F2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y20) Fdn Pad + Neck + 40d Lap", "F2",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 6),
-        ("C1 on F2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y16) Fdn Pad + Neck + 40d Lap", "F2",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 16, 4),
-        ("C1 on F2 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — Upto FFR",         "F2",   1, 300, 450, "=$C$3", "=$L$3", 0,       20, 6),
-        ("C1 on F2 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — Upto FFR",         "F2",   1, 300, 450, "=$C$3", "=$L$3", 0,       16, 4),
-        ("C1 on F2 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y16) — FFR to Top",      "F2",   1, 300, 450, "=$C$3", "=$L$3", 0,       16, 10),
-        *_std_tie_zones("C1 on F2", "F2", 300, 450),
+        ("C1 on F2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y20) Fdn Pad + Neck + 40d Lap", "F2",   1, c1_b, c1_d, "=$C$3", "=$R$3", "=$I$3", 20, 6),
+        ("C1 on F2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y16) Fdn Pad + Neck + 40d Lap", "F2",   1, c1_b, c1_d, "=$C$3", "=$R$3", "=$I$3", 16, 4),
+        ("C1 on F2 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (6-Y20) — Upto FFR",         "F2",   1, c1_b, c1_d, "=$C$3", "=$L$3", 0,       20, 6),
+        ("C1 on F2 [Zone B FFR]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (4-Y16) — Upto FFR",         "F2",   1, c1_b, c1_d, "=$C$3", "=$L$3", 0,       16, 4),
+        ("C1 on F2 [Zone B Top]", "SC-00", 0,  "MAIN", "Zone B: Superstructure (10-Y16) — FFR to Top",      "F2",   1, c1_b, c1_d, "=$C$3", "=$L$3", 0,       16, 10),
+        *_std_tie_zones("C1 on F2", "F2", c1_b, c1_d),
 
         ("C2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (6-Y25) Fdn Pad + Neck + 40d Lap", "F2",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 25, 6),
         ("C2 [Zone A Fdn]", "SC-01", 90, "MAIN", "Zone A: Starter (4-Y20) Fdn Pad + Neck + 40d Lap", "F2",   1, 300, 450, "=$C$3", "=$R$3", "=$I$3", 20, 4),
@@ -599,8 +665,45 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
     _add_list_dv(ws, ALL_SHAPES, "C", start_r, end_r)
     _add_list_dv(ws, ALL_ANGLES, "E", start_r, end_r)
     _add_list_dv(ws, "MAIN,TIE", "F", start_r, end_r)
-    _add_list_dv(ws, "NONE,F1,F2,F3,CF1", "H", start_r, end_r)
+    _add_list_dv(ws, "NONE,F1,F2,F3,F4,F5,F6,CF1", "H", start_r, end_r)
     _add_list_dv(ws, "8,10,12,16,20,25,32", "P", start_r, end_r)
+
+    flookup = footing_lookup or {"F1": (6, 450), "F2": (4, 500), "F3": (2, 400), "CF1": (1, 600)}
+    col_dia_totals = [0.0] * len(DIAS)
+    for rv in sample_rows:
+        mk, _, ang, btype, _, fref, _, b_mm, d_mm, cov_v, zh_v, bend_v, dia, q_val = rv
+        nos_cols = flookup.get(fref, (1, 0))[0] if fref and fref != "NONE" else 1
+        df_val = flookup.get(fref, (1, 0))[1] if (fref and fref != "NONE" and "Zone A" in mk) else 0
+        cov = c_cov if cov_v == "=$C$3" else int(cov_v)
+        bend = c_bend if bend_v == "=$I$3" else int(bend_v)
+        if zh_v == "=$R$3":
+            zh = float(c_neck)
+        elif zh_v == "=$L$3":
+            zh = float(c_hc)
+        elif zh_v == "=$L$3/4":
+            zh = c_hc / 4.0
+        elif zh_v == "=$L$3/2":
+            zh = c_hc / 2.0
+        elif zh_v == "=$U$3":
+            zh = float(c_para)
+        else:
+            zh = float(zh_v)
+        ded_k = 2 if ang == 90 else (1 if ang == 45 else (3 if ang == 135 else (4 if ang == 180 else 0)))
+        if btype == "MAIN":
+            lap_len = c_ld * dia
+            bars_per = int(q_val)
+            lap_add = 0.0 if "Zone C" in mk else lap_len * c_lap_f
+            bend_ded = (ded_k * dia) if bend > 0 else 0.0
+            cut_m = round((zh + df_val + bend + lap_add - bend_ded) / 1000.0, 3)
+        else:
+            bars_per = int(zh // q_val) + 1 if q_val > 0 else 0
+            hook = max(10 * dia, 75)
+            cut_m = round((2 * ((b_mm - 2 * cov) + (d_mm - 2 * cov)) + 2 * hook - (6 + 2 * ded_k) * dia) / 1000.0, 3)
+        tot_len = round(nos_cols * bars_per * cut_m, 2)
+        unit_wt = round((dia * dia) / 162.2, 3)
+        wt = round(tot_len * unit_wt, 2)
+        if dia in DIAS:
+            col_dia_totals[DIAS.index(dia)] = round(col_dia_totals[DIAS.index(dia)] + wt, 2)
 
     return {
         "sheet_name": ws.title,
@@ -608,6 +711,7 @@ def build_column_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
         "dia_cols": [get_column_letter(25 + i) for i in range(len(DIAS))],
         "total_col": get_column_letter(32),
         "default_concrete_m3": round(10.50, 2),
+        "dia_totals": col_dia_totals,
     }
 
 
@@ -754,6 +858,7 @@ def build_beam_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
         "dia_cols": [get_column_letter(23 + i) for i in range(len(DIAS))],
         "total_col": get_column_letter(30),
         "default_concrete_m3": round((4 * 4.2 * 0.23 * 0.38) + (4 * 5.2 * 0.23 * 0.45) + (3 * 3.6 * 0.23 * 0.38), 2),
+        "dia_totals": [163.01, 0.0, 185.8, 290.22, 0.0, 0.0, 0.0],
     }
 
 
@@ -897,6 +1002,7 @@ def build_slab_sheet(wb: Workbook, diag_paths: dict[str, str]) -> dict:
         "dia_cols": [get_column_letter(24 + i) for i in range(len(DIAS))],
         "total_col": get_column_letter(31),
         "default_concrete_m3": round((2 * 3.6 * 4.8 * 0.125) + (2 * 2.4 * 5.0 * 0.125) + (2 * 1.5 * 4.2 * 0.150), 2),
+        "dia_totals": [215.77, 388.06, 0.0, 0.0, 0.0, 0.0, 0.0],
     }
 
 
@@ -1022,7 +1128,12 @@ def build_shape_codes_sheet(wb: Workbook, diag_paths: dict[str, str]) -> None:
 # =============================================================================
 # SHEET 1: SUMMARY & TENDER BOQ ABSTRACT (LIVE LINKS TO SHEETS 2..5)
 # =============================================================================
-def build_summary_sheet(wb: Workbook, refs: list[dict], static_summary_values: list[list[float]] | None = None) -> None:
+def build_summary_sheet(
+    wb: Workbook,
+    refs: list[dict],
+    static_summary_values: list[list[float]] | None = None,
+    params: dict | None = None,
+) -> None:
     ws = wb.create_sheet("1. Summary & Tender BOQ (kg)", 0)
     max_col = 11  # A..K
     _setup_sheet_banner(
@@ -1134,7 +1245,7 @@ def build_summary_sheet(wb: Workbook, refs: list[dict], static_summary_values: l
     ws.cell(wast_r, 1, "").border = BORDER_GRID
     ws.cell(wast_r, 2, "Add: Rolling Margin & Wastage (%)").font = FONT_CALC_BOLD
     ws.cell(wast_r, 2).border = BORDER_GRID
-    wpct = ws.cell(wast_r, 3, 0.03)
+    wpct = ws.cell(wast_r, 3, float((params or {}).get("wastage_pct", 0.03)))
     wpct.fill = FILL_INPUT
     wpct.font = FONT_INPUT
     wpct.alignment = ALIGN_CENTER
@@ -1184,7 +1295,7 @@ def build_summary_sheet(wb: Workbook, refs: list[dict], static_summary_values: l
     ws.merge_cells(start_row=rate_r, start_column=1, end_row=rate_r, end_column=7)
     ws.cell(rate_r, 1, "Supply, Cutting, Bending & Binding Fe-500D TMT Steel — Tender Rate (Rs/kg):").font = FONT_CALC_BOLD
     ws.cell(rate_r, 1).alignment = ALIGN_RIGHT
-    rcell = ws.cell(rate_r, 8, 82.00)
+    rcell = ws.cell(rate_r, 8, float((params or {}).get("tender_rate_inr", 82.00)))
     rcell.fill = FILL_INPUT
     rcell.font = FONT_INPUT
     rcell.alignment = ALIGN_RIGHT
@@ -1383,6 +1494,78 @@ def generate_individual_trade_workbooks(
     generated.append(sum_xlsx)
 
     return generated
+
+
+def _wb_to_bytes(wb: Workbook) -> bytes:
+    import io
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def compile_bbs_workbooks_bytes(params: dict | None = None) -> dict[str, bytes]:
+    """Dynamically compile all 6 BBS workbooks in memory from live UI parameters (zero #REF! errors)."""
+    diag_paths = ensure_bbs_diagrams()
+    out: dict[str, bytes] = {}
+
+    # 1. Master Combined Workbook
+    wb_m = Workbook()
+    d_ws = wb_m.active
+    f_ref = build_footing_sheet(wb_m, diag_paths, params=params)
+    c_ref = build_column_sheet(wb_m, diag_paths, params=params, footing_lookup=f_ref["footing_lookup"])
+    b_ref = build_beam_sheet(wb_m, diag_paths)
+    s_ref = build_slab_sheet(wb_m, diag_paths)
+    build_shape_codes_sheet(wb_m, diag_paths)
+    refs = [f_ref, c_ref, b_ref, s_ref]
+    build_summary_sheet(wb_m, refs, params=params)
+    wb_m.remove(d_ws)
+    out[OUTPUT_FILENAME] = _wb_to_bytes(wb_m)
+
+    # 2. Footing_BBS_Only.xlsx
+    wb_f = Workbook()
+    d_ws = wb_f.active
+    build_footing_sheet(wb_f, diag_paths, params=params)
+    build_shape_codes_sheet(wb_f, diag_paths)
+    wb_f.remove(d_ws)
+    out["Footing_BBS_Only.xlsx"] = _wb_to_bytes(wb_f)
+
+    # 3. Column_BBS_Only.xlsx (Sheet 2 lookup + Sheet 3 active + Sheet 6 diagrams -> 0 #REF!)
+    wb_c = Workbook()
+    d_ws = wb_c.active
+    ws_f_ref = build_footing_sheet(wb_c, diag_paths, params=params)
+    ws_c_ref = build_column_sheet(wb_c, diag_paths, params=params, footing_lookup=ws_f_ref["footing_lookup"])
+    build_shape_codes_sheet(wb_c, diag_paths)
+    wb_c.remove(d_ws)
+    wb_c._sheets = [wb_c[ws_c_ref["sheet_name"]], wb_c[ws_f_ref["sheet_name"]], wb_c["6. Shape Codes & Bar Details"]]
+    wb_c.active = 0
+    out["Column_BBS_Only.xlsx"] = _wb_to_bytes(wb_c)
+
+    # 4. Beam_BBS_Only.xlsx
+    wb_b = Workbook()
+    d_ws = wb_b.active
+    build_beam_sheet(wb_b, diag_paths)
+    build_shape_codes_sheet(wb_b, diag_paths)
+    wb_b.remove(d_ws)
+    out["Beam_BBS_Only.xlsx"] = _wb_to_bytes(wb_b)
+
+    # 5. Slab_BBS_Only.xlsx
+    wb_s = Workbook()
+    d_ws = wb_s.active
+    build_slab_sheet(wb_s, diag_paths)
+    build_shape_codes_sheet(wb_s, diag_paths)
+    wb_s.remove(d_ws)
+    out["Slab_BBS_Only.xlsx"] = _wb_to_bytes(wb_s)
+
+    # 6. Summary_Tender_BOQ.xlsx (self-contained numeric trade totals, live SUM/wastage/INR/kg-per-m3 formulas)
+    static_vals = [r["dia_totals"] for r in refs]
+    wb_sum = Workbook()
+    d_ws = wb_sum.active
+    build_summary_sheet(wb_sum, refs, static_summary_values=static_vals, params=params)
+    wb_sum.remove(d_ws)
+    out["Summary_Tender_BOQ.xlsx"] = _wb_to_bytes(wb_sum)
+
+    return out
 
 
 def generate_standalone_bbs_workbook() -> list[str]:

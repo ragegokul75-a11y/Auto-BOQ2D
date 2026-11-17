@@ -26,6 +26,7 @@ from PIL import Image, ImageDraw
 from bbs_diagrams import ensure_bbs_diagrams
 from create_bbs_excel import (
     OUTPUT_FILENAME as BBS_XLSX_NAME,
+    compile_bbs_workbooks_bytes,
     generate_standalone_bbs_workbook,
 )
 from drawing_renderer import render_any
@@ -207,6 +208,13 @@ def _ensure_bbs_files():
     return xlsx_path, pdf_path
 
 
+@st.cache_data(show_spinner=False)
+def _get_compiled_bbs_bytes(params_json: str) -> Dict[str, bytes]:
+    import json
+
+    return compile_bbs_workbooks_bytes(json.loads(params_json))
+
+
 # ---------------------------------------------------------------------------
 # Session State
 # ---------------------------------------------------------------------------
@@ -218,6 +226,114 @@ if "dwg_data" not in st.session_state:
     st.session_state.dwg_data = None
 if "diag_paths" not in st.session_state:
     st.session_state.diag_paths = ensure_bbs_diagrams()
+
+# ---------------------------------------------------------------------------
+# Sidebar: Live Structural Parameters & Download Center
+# ---------------------------------------------------------------------------
+with st.sidebar:
+    st.header("⚙️ BBS Structural Inputs")
+    sb_hc = st.number_input("Floor Clear Height HC (mm)", value=3300, min_value=2400, max_value=6000, step=100)
+    sb_neck = st.number_input("Zone A Neck Height (mm)", value=1800, min_value=600, max_value=4000, step=100)
+    sc1, sc2 = st.columns(2)
+    sb_c1_b = sc1.number_input("C1 Width b (mm)", value=300, min_value=200, max_value=1200, step=25)
+    sb_c1_d = sc2.number_input("C1 Depth D (mm)", value=450, min_value=200, max_value=1500, step=25)
+    sv1, sv2 = st.columns(2)
+    sb_col_cov = sv1.number_input("Col Cover (mm)", value=40, min_value=25, max_value=75, step=5)
+    sb_ftg_cov = sv2.number_input("Footing Cover (mm)", value=50, min_value=40, max_value=75, step=5)
+
+    with st.expander("Footing Marks (F1–F6) Overrides", expanded=False):
+        st.caption("Edit Nos, Dimensions & Pad Depth Df (mm) — Column VLOOKUP updates automatically.")
+        f_cfg: Dict[str, Dict[str, int]] = {}
+        f_defaults = {
+            "F1": (6, 1800, 1500, 450),
+            "F2": (4, 2100, 1800, 500),
+            "F3": (2, 1500, 1500, 400),
+            "F4": (0, 1800, 1800, 450),
+            "F5": (0, 2000, 2000, 500),
+            "F6": (0, 2200, 2200, 550),
+        }
+        for mk, (d_nos, d_lx, d_ly, d_df) in f_defaults.items():
+            st.markdown(f"**{mk}**")
+            fc_a, fc_b, fc_c, fc_d = st.columns(4)
+            nos_v = fc_a.number_input("Nos", value=d_nos, min_value=0, step=1, key=f"sb_{mk}_nos")
+            lx_v = fc_b.number_input("Lx", value=d_lx, min_value=600, step=100, key=f"sb_{mk}_lx")
+            ly_v = fc_c.number_input("Ly", value=d_ly, min_value=600, step=100, key=f"sb_{mk}_ly")
+            df_v = fc_d.number_input("Df", value=d_df, min_value=200, step=25, key=f"sb_{mk}_df")
+            if nos_v > 0 or mk in ("F1", "F2", "F3"):
+                f_cfg[mk] = {"nos": int(nos_v), "lx": int(lx_v), "ly": int(ly_v), "df": int(df_v)}
+
+    sr1, sr2 = st.columns(2)
+    sb_rate = sr1.number_input("Steel Rate (₹/kg)", value=82.0, min_value=10.0, step=1.0, key="sb_rate")
+    sb_wast = sr2.number_input("Wastage (%)", value=3.0, min_value=0.0, max_value=15.0, step=0.5, key="sb_wast")
+
+    import json as _json
+
+    bbs_params = {
+        "clear_height_mm": int(sb_hc),
+        "neck_height_mm": int(sb_neck),
+        "c1_b_mm": int(sb_c1_b),
+        "c1_d_mm": int(sb_c1_d),
+        "col_cover_mm": int(sb_col_cov),
+        "footing_cover_mm": int(sb_ftg_cov),
+        "footings": f_cfg,
+        "tender_rate_inr": float(sb_rate),
+        "wastage_pct": float(sb_wast) / 100.0,
+    }
+    compiled_bbs = _get_compiled_bbs_bytes(_json.dumps(bbs_params, sort_keys=True))
+
+    st.divider()
+    st.header("📥 Download Center")
+    st.caption("Instant single-trade or complete master Excel downloads (0 formula errors).")
+    _xlsx_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    st.download_button(
+        "⬇️ Download Footing BBS",
+        data=compiled_bbs["Footing_BBS_Only.xlsx"],
+        file_name="Footing_BBS_Only.xlsx",
+        mime=_xlsx_mime,
+        use_container_width=True,
+        key="sb_dl_ftg",
+    )
+    st.download_button(
+        "⬇️ Download Column BBS",
+        data=compiled_bbs["Column_BBS_Only.xlsx"],
+        file_name="Column_BBS_Only.xlsx",
+        mime=_xlsx_mime,
+        use_container_width=True,
+        key="sb_dl_col",
+    )
+    st.download_button(
+        "⬇️ Download Beam BBS",
+        data=compiled_bbs["Beam_BBS_Only.xlsx"],
+        file_name="Beam_BBS_Only.xlsx",
+        mime=_xlsx_mime,
+        use_container_width=True,
+        key="sb_dl_bm",
+    )
+    st.download_button(
+        "⬇️ Download Slab BBS",
+        data=compiled_bbs["Slab_BBS_Only.xlsx"],
+        file_name="Slab_BBS_Only.xlsx",
+        mime=_xlsx_mime,
+        use_container_width=True,
+        key="sb_dl_slb",
+    )
+    st.download_button(
+        "⬇️ Download Summary BOQ",
+        data=compiled_bbs["Summary_Tender_BOQ.xlsx"],
+        file_name="Summary_Tender_BOQ.xlsx",
+        mime=_xlsx_mime,
+        use_container_width=True,
+        key="sb_dl_sum",
+    )
+    st.download_button(
+        "📦 Download Complete Master BBS Workbook (All Sheets)",
+        data=compiled_bbs[BBS_XLSX_NAME],
+        file_name=BBS_XLSX_NAME,
+        mime=_xlsx_mime,
+        type="primary",
+        use_container_width=True,
+        key="sb_dl_master",
+    )
 
 # ---------------------------------------------------------------------------
 # Header
@@ -470,17 +586,65 @@ with tab2:
 # ===========================================================================
 with tab3:
     diags = st.session_state.diag_paths
-    xlsx_tpl, pdf_tpl = _ensure_bbs_files()
+    _, pdf_tpl = _ensure_bbs_files()
+
+    st.subheader("📥 BBS Download Center (Single-Trade & Complete Master Workbook)")
+    st.caption(
+        f"Live-compiled with **HC = {sb_hc} mm**, **Neck = {sb_neck} mm**, "
+        f"**C1 = {sb_c1_b}×{sb_c1_d} mm**, **Rate = ₹{sb_rate:.0f}/kg**, **Wastage = {sb_wast:.1f}%**."
+    )
+    tc1, tc2, tc3, tc4, tc5 = st.columns(5)
+    tc1.download_button(
+        "⬇️ Download Footing BBS",
+        data=compiled_bbs["Footing_BBS_Only.xlsx"],
+        file_name="Footing_BBS_Only.xlsx",
+        mime=_xlsx_mime,
+        use_container_width=True,
+        key="tab_dl_ftg",
+    )
+    tc2.download_button(
+        "⬇️ Download Column BBS",
+        data=compiled_bbs["Column_BBS_Only.xlsx"],
+        file_name="Column_BBS_Only.xlsx",
+        mime=_xlsx_mime,
+        use_container_width=True,
+        key="tab_dl_col",
+    )
+    tc3.download_button(
+        "⬇️ Download Beam BBS",
+        data=compiled_bbs["Beam_BBS_Only.xlsx"],
+        file_name="Beam_BBS_Only.xlsx",
+        mime=_xlsx_mime,
+        use_container_width=True,
+        key="tab_dl_bm",
+    )
+    tc4.download_button(
+        "⬇️ Download Slab BBS",
+        data=compiled_bbs["Slab_BBS_Only.xlsx"],
+        file_name="Slab_BBS_Only.xlsx",
+        mime=_xlsx_mime,
+        use_container_width=True,
+        key="tab_dl_slb",
+    )
+    tc5.download_button(
+        "⬇️ Download Summary BOQ",
+        data=compiled_bbs["Summary_Tender_BOQ.xlsx"],
+        file_name="Summary_Tender_BOQ.xlsx",
+        mime=_xlsx_mime,
+        use_container_width=True,
+        key="tab_dl_sum",
+    )
 
     d1, d2 = st.columns(2)
-    with open(xlsx_tpl, "rb") as xf:
-        d1.download_button(
-            "⬇ Download 6-Sheet BBS Excel (Footing, Column, Beam, Slab)",
-            data=xf.read(),
-            file_name=BBS_XLSX_NAME,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
+    d1.download_button(
+        "📦 Download Complete Master BBS Workbook (All Sheets)",
+        data=compiled_bbs[BBS_XLSX_NAME],
+        file_name=BBS_XLSX_NAME,
+        mime=_xlsx_mime,
+        type="primary",
+        use_container_width=True,
+        key="tab_dl_master",
+    )
     if os.path.exists(pdf_tpl):
         with open(pdf_tpl, "rb") as pf:
             d2.download_button(
@@ -489,6 +653,7 @@ with tab3:
                 file_name=os.path.splitext(BBS_XLSX_NAME)[0] + ".pdf",
                 mime="application/pdf",
                 use_container_width=True,
+                key="tab_dl_pdf",
             )
 
     st.divider()
