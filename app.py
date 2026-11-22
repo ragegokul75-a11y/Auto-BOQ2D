@@ -844,7 +844,8 @@ with tab4:
     st.subheader("🏗️ Smart AutoCAD → Modular 9-Tab BOQ (Every Building Part Separate)")
     st.caption(
         "Upload a `.DXF` drawing OR the `AutoBOQ_Takeoff.csv` exported from AutoCAD using our free "
-        "`AutoBOQ_SmartTools.lsp` plugin (`AB_FOOTING`, `AB_COLUMN`, `AB_SLAB`, `AB_ROOMS`, `AB_ALL`)."
+        "`AutoBOQ_SmartTools.lsp` plugin — just type **`AD`** in AutoCAD to open the interactive pop-up menu "
+        "(Footing, Column, Plinth Beam, Roof/Floor Beam, Slab, Wall, Room)."
     )
 
     c_lsp1, c_lsp2 = st.columns([2, 1])
@@ -866,7 +867,7 @@ with tab4:
                     use_container_width=True,
                     key="dl_autocad_lsp",
                 )
-        st.caption("Load in AutoCAD via `APPLOAD` → run `AB_FOOTING`, `AB_COLUMN`, `AB_SLAB`, `AB_ROOMS`, or `AB_ALL`.")
+        st.caption("Load in AutoCAD via `APPLOAD` → type **`AD`** to open the step-by-step pop-up menu!")
 
     if cad_up is not None:
         try:

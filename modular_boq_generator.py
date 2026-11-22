@@ -656,7 +656,10 @@ def _derive_trade_datasets(
 
     ftgs = [r for r in raw_rows if r["part"] == "FOOTING"]
     cols = [r for r in raw_rows if r["part"] == "COLUMN"]
+    pbeams = [r for r in raw_rows if r["part"] == "PLINTH_BEAM"]
+    beams = [r for r in raw_rows if r["part"] == "BEAM"]
     slabs = [r for r in raw_rows if r["part"] == "SLAB"]
+    walls = [r for r in raw_rows if r["part"] in ("WALL", "MASONRY")]
     rooms = [r for r in raw_rows if r["part"] == "ROOM"]
 
     ftg_area = sum(r["nos"] * r["area_m2"] for r in ftgs) or 37.08
@@ -668,15 +671,18 @@ def _derive_trade_datasets(
 
     slab_area = sum(r["nos"] * r["area_m2"] for r in slabs) or 112.00
     slab_vol = round(slab_area * slab_thk, 2)
-    beam_vol = round(slab_area * 0.065, 2)
-    plinth_beam_vol = round(slab_area * 0.055, 2)
+    beam_vol = round(sum(r["nos"] * r["area_m2"] * (r["ht_m"] or 0.45) for r in beams), 2) or round(slab_area * 0.065, 2)
+    plinth_beam_vol = round(sum(r["nos"] * r["area_m2"] * (r["ht_m"] or 0.38) for r in pbeams), 2) or round(slab_area * 0.055, 2)
     stair_vol = 2.65
     total_rcc_vol = round(ftg_vol + col_vol + plinth_beam_vol + beam_vol + slab_vol + stair_vol, 2)
     total_steel_kg = round(total_rcc_vol * 120.0, 2)
 
     room_area = sum(r["nos"] * r["area_m2"] for r in rooms) or 80.40
     room_perim = sum(r["nos"] * r["perim_m"] for r in rooms) or 84.80
-    outer_perim = max(sum(r["perim_m"] for r in slabs), 44.0)
+    outer_wall_len = sum(r["nos"] * r["len_m"] for r in walls if r["wid_m"] >= 0.18)
+    part_wall_len = sum(r["nos"] * r["len_m"] for r in walls if r["wid_m"] < 0.18)
+    outer_perim = round(outer_wall_len, 2) if outer_wall_len > 0 else max(sum(r["perim_m"] for r in slabs), 44.0)
+    part_len = round(part_wall_len, 2) if part_wall_len > 0 else round(room_perim * 0.45, 2)
 
     fdn_rows = [
         ("FD-01", "Earthwork in excavation in foundation trenches & footing pits up to 2.25 m depth", "Cum", 1, round(ftg_area * 1.15, 2), 1.0, 2.00, 320.0, "Includes working space"),
@@ -698,7 +704,7 @@ def _derive_trade_datasets(
 
     mas_rows = [
         ("MS-01", "230 mm Outer Brick / AAC Block Masonry in CM 1:6 (Perimeter × Story Ht)", "Cum", 1, round(outer_perim, 2), 0.23, story_ht, 6900.0, "External walls"),
-        ("MS-02", "115 mm Internal Partition Masonry in CM 1:4", "Cum", 1, round(room_perim * 0.45, 2), 0.115, story_ht, 7200.0, "Internal partitions"),
+        ("MS-02", "115 mm Internal Partition Masonry in CM 1:4", "Cum", 1, part_len, 0.115, story_ht, 7200.0, "Internal partitions"),
         ("MS-03", "Less: Deduction for Doors, Windows & Ventilators (Auto-linked from Tab 5)", "Cum", -1, "='5. Doors & Windows'!F11", 0.23, 1.0, 6900.0, "Live link to Tab 5"),
         ("PL-01", "12 mm Internal Cement Plastering in CM 1:6 on walls (net of openings)", "Sqm", 1, round(room_perim * story_ht * 0.85, 2), 1.0, 1.0, 310.0, "Smooth trowel finish"),
         ("PL-02", "18 mm External Two-Coat Waterproof Plastering in CM 1:4", "Sqm", 1, round(outer_perim * story_ht * 0.90, 2), 1.0, 1.0, 390.0, "Weatherproof coat"),
