@@ -40,6 +40,7 @@ from modular_boq_generator import (
     MASTER_FILENAME as MODULAR_BOQ_NAME,
     compile_modular_boq_bytes,
     default_autocad_sample_rows,
+    get_modular_boq_preview,
     parse_autocad_takeoff,
 )
 
@@ -391,7 +392,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "1. Drawing & Takeoff",
     "2. BOQ & Abstract (Excel / PDF)",
     "3. Bar Bending Schedule (Steel kg)",
-    "4. Smart AutoCAD → Modular BOQ (9 Tabs)",
+    "4. Smart AutoCAD → Modular BOQ (12 Tabs)",
 ])
 
 # ===========================================================================
@@ -838,14 +839,14 @@ with tab3:
         g3.image(diags["DETAIL_EXTRA"], caption="3. Extra Support Bars Arrangement", width=360)
 
 # ===========================================================================
-# TAB 4: SMART AUTOCAD -> MODULAR 9-TAB BOQ (EVERY PART SEPARATE)
+# TAB 4: SMART AUTOCAD -> COMPLETE 12-TAB MODULAR BOQ (EVERY PART SEPARATE)
 # ===========================================================================
 with tab4:
-    st.subheader("🏗️ Smart AutoCAD → Modular 9-Tab BOQ (Every Building Part Separate)")
+    st.subheader("🏗️ Smart AutoCAD → Modular 12-Tab BOQ (Every Building Part Separate)")
     st.caption(
         "Upload a `.DXF` drawing OR the `AutoBOQ_Takeoff.csv` exported from AutoCAD using our free "
-        "`AutoBOQ_SmartTools.lsp` plugin — just type **`AD`** in AutoCAD to open the interactive pop-up menu "
-        "(Footing, Column, Plinth Beam, Roof/Floor Beam, Slab, Wall, Room)."
+        "`AutoBOQ_SmartTools.lsp` plugin — just type **`AD`** in AutoCAD to open the 10-part pop-up menu "
+        "(Footing, Column, Plinth Beam, Beam, Slab, Staircase, Water Tank, Wall, Room) and draw native BBS & BOQ tables!"
     )
 
     c_lsp1, c_lsp2 = st.columns([2, 1])
@@ -860,14 +861,14 @@ with tab4:
         if os.path.exists(lsp_path):
             with open(lsp_path, "rb") as lf:
                 st.download_button(
-                    "⬇️ Download AutoCAD LISP Plugin (.LSP)",
+                    "⬇️ Download AutoCAD LISP Plugin v2 (.LSP)",
                     data=lf.read(),
                     file_name="AutoBOQ_SmartTools.lsp",
                     mime="text/plain",
                     use_container_width=True,
                     key="dl_autocad_lsp",
                 )
-        st.caption("Load in AutoCAD via `APPLOAD` → type **`AD`** to open the step-by-step pop-up menu!")
+        st.caption("Load via `APPLOAD` → type **`AD`** (10 parts + native AutoCAD BBS & BOQ Table + CSV export).")
 
     if cad_up is not None:
         try:
@@ -884,16 +885,18 @@ with tab4:
     else:
         mod_raw_rows = default_autocad_sample_rows()
 
-    st.dataframe(mod_raw_rows, use_container_width=True, hide_index=True)
+    with st.expander("📐 AutoCAD Raw Polyline Takeoff & Room Schedule", expanded=False):
+        st.dataframe(mod_raw_rows, use_container_width=True, hide_index=True)
 
     st.markdown("#### Project & Commercial Parameters (Live Recompile)")
-    mp1, mp2, mp3, mp4, mp5, mp6 = st.columns(6)
+    mp1, mp2, mp3, mp4, mp5, mp6, mp7 = st.columns(7)
     m_story_ht = mp1.number_input("Story Ht (m)", value=3.30, min_value=2.4, max_value=6.0, step=0.1, key="mod_ht")
     m_slab_thk = mp2.number_input("Slab Thk (m)", value=0.125, min_value=0.10, max_value=0.30, step=0.005, format="%.3f", key="mod_sthk")
-    m_conc_rt = mp3.number_input("M25 Conc (₹/m³)", value=7600.0, step=100.0, key="mod_conc")
+    m_conc_rt = mp3.number_input("M25 (₹/m³)", value=7600.0, step=100.0, key="mod_conc")
     m_stl_rt = mp4.number_input("Steel (₹/kg)", value=82.0, step=1.0, key="mod_stl")
-    m_cont = mp5.number_input("Contingency (%)", value=5.0, step=0.5, key="mod_cont")
-    m_ohp = mp6.number_input("OHP (%)", value=10.0, step=0.5, key="mod_ohp")
+    m_cont = mp5.number_input("Contingency %", value=5.0, step=0.5, key="mod_cont")
+    m_ohp = mp6.number_input("OHP %", value=10.0, step=0.5, key="mod_ohp")
+    m_gst = mp7.number_input("GST %", value=18.0, min_value=0.0, max_value=28.0, step=1.0, key="mod_gst")
 
     mod_params = {
         "story_height_m": float(m_story_ht),
@@ -902,14 +905,59 @@ with tab4:
         "steel_rate_inr": float(m_stl_rt),
         "contingency_pct": float(m_cont) / 100.0,
         "ohp_pct": float(m_ohp) / 100.0,
-        "gst_pct": 0.18,
+        "gst_pct": float(m_gst) / 100.0,
     }
+    mod_prev = get_modular_boq_preview(mod_raw_rows, mod_params)
     mod_files = compile_modular_boq_bytes(mod_raw_rows, mod_params)
+    k = mod_prev["kpis"]
+
+    # Executive Scope Breakdown Cards (Matching Quick Building Estimator PRO)
+    st.markdown("#### 📊 Commercial & Scope Breakdown")
+    sk1, sk2, sk3, sk4, sk5 = st.columns(5)
+    sk1.metric("Materials (Supply Only)", f"₹{k['materials_supply']:,.0f}", "22 Supply Items")
+    sk2.metric("Labour & Works", f"₹{k['labour_works']:,.0f}", "All Civil/Finish/MEP")
+    sk3.metric("Doors & Windows", f"₹{k['doors_windows']:,.0f}", "Joinery Schedule")
+    sk4.metric("Additional Works", f"₹{k['additional_works']:,.0f}", "Sump/Septic/Wall/RWH")
+    sk5.metric("Grand Total (incl. GST)", f"₹{k['grand_total']:,.0f}", f"₹{k['rate_per_sqft']:,.0f} / Sq.ft")
+
+    # Scope & Trade Filterable Itemized BOQ + Show Formulas Checkbox
+    st.markdown("#### 🔍 Itemized BOQ Explorer (Filter by Scope / Trade)")
+    fc1, fc2, fc3 = st.columns([1.4, 1.4, 1])
+    scope_sel = fc1.selectbox(
+        "Primary Scope Filter",
+        ["All Items", "Materials Only", "Labour & Works", "Doors & Windows", "Additional Works"],
+        key="mod_scope_flt",
+    )
+    all_trades = sorted({r["Trade"] for r in mod_prev["items"]})
+    trade_sel = fc2.selectbox("Filter by Trade", ["All Trades"] + all_trades, key="mod_trade_flt")
+    show_fml = fc3.checkbox("Show First-Principles Formulas", value=True, key="mod_show_fml")
+
+    filt_items = mod_prev["items"]
+    if scope_sel != "All Items":
+        filt_items = [r for r in filt_items if r["Scope"] == scope_sel]
+    if trade_sel != "All Trades":
+        filt_items = [r for r in filt_items if r["Trade"] == trade_sel]
+
+    disp_rows = []
+    for r in filt_items:
+        row_obj = {
+            "Code": r["Code"],
+            "Trade": r["Trade"],
+            "Description": r["Description"],
+            "Qty": r["Qty"],
+            "Unit": r["Unit"],
+            "Rate (₹)": r["Rate (₹)"],
+            "Amount (₹)": r["Amount (₹)"],
+        }
+        if show_fml:
+            row_obj["First-Principles Formula"] = r["Formula"]
+        disp_rows.append(row_obj)
+    st.dataframe(disp_rows, use_container_width=True, hide_index=True)
 
     st.divider()
-    st.markdown("#### 📥 Modular BOQ Download Center (Complete 9-Tab Master or Individual Parts)")
+    st.markdown("#### 📥 Modular BOQ Download Center (Complete 12-Tab Master, Reports & Individual Trade Files)")
     st.download_button(
-        "📦 Download Complete 9-Tab Modular BOQ Workbook (All Building Parts + Material Mix Yield)",
+        "📦 Download Complete 12-Tab Master BOQ Workbook (All Parts + 22 Materials + Client BOQ + Bank Loan)",
         data=mod_files[MODULAR_BOQ_NAME],
         file_name=MODULAR_BOQ_NAME,
         mime=_xlsx_mime,
@@ -917,11 +965,18 @@ with tab4:
         use_container_width=True,
         key="mod_dl_master",
     )
-    mc1, mc2, mc3 = st.columns(3)
-    mc1.download_button("⬇️ 1. Foundation & Earthwork", data=mod_files["BOQ_Foundation_Earthwork.xlsx"], file_name="BOQ_Foundation_Earthwork.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_fdn")
-    mc2.download_button("⬇️ 2. RCC Structure & Steel", data=mod_files["BOQ_RCC_Structure.xlsx"], file_name="BOQ_RCC_Structure.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_rcc")
-    mc3.download_button("⬇️ 3. Masonry & Plastering", data=mod_files["BOQ_Masonry_Plaster.xlsx"], file_name="BOQ_Masonry_Plaster.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_mas")
-    mc4, mc5, mc6 = st.columns(3)
-    mc4.download_button("⬇️ 4. Doors & Windows", data=mod_files["BOQ_Doors_Windows.xlsx"], file_name="BOQ_Doors_Windows.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_dw")
-    mc5.download_button("⬇️ 5. Flooring, Tiles & Paint", data=mod_files["BOQ_Flooring_Paint.xlsx"], file_name="BOQ_Flooring_Paint.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_flr")
-    mc6.download_button("⬇️ 6. Electrical & Plumbing", data=mod_files["BOQ_Electrical_Plumbing.xlsx"], file_name="BOQ_Electrical_Plumbing.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_mep")
+    r1, r2, r3 = st.columns(3)
+    r1.download_button("🧱 Materials Takeoff Only (22 Items)", data=mod_files["BOQ_Materials_Takeoff_Only.xlsx"], file_name="BOQ_Materials_Takeoff_Only.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_mat")
+    r2.download_button("💼 Client Quotation BOQ (incl. OHP)", data=mod_files["BOQ_Client_Quotation.xlsx"], file_name="BOQ_Client_Quotation.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_cli")
+    r3.download_button("🏦 Bank Loan Estimate (Stages)", data=mod_files["BOQ_Bank_Loan_Estimate.xlsx"], file_name="BOQ_Bank_Loan_Estimate.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_bnk")
+
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    mc1.download_button("⬇️ Foundation & Basement", data=mod_files["BOQ_Foundation_Earthwork.xlsx"], file_name="BOQ_Foundation_Earthwork.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_fdn")
+    mc2.download_button("⬇️ RCC Structure & Steel", data=mod_files["BOQ_RCC_Structure.xlsx"], file_name="BOQ_RCC_Structure.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_rcc")
+    mc3.download_button("⬇️ Masonry & Plastering", data=mod_files["BOQ_Masonry_Plaster.xlsx"], file_name="BOQ_Masonry_Plaster.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_mas")
+    mc4.download_button("⬇️ Doors & Windows", data=mod_files["BOQ_Doors_Windows.xlsx"], file_name="BOQ_Doors_Windows.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_dw")
+
+    mc5, mc6, mc7 = st.columns(3)
+    mc5.download_button("⬇️ Flooring, Granite & Paint", data=mod_files["BOQ_Flooring_Paint.xlsx"], file_name="BOQ_Flooring_Paint.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_flr")
+    mc6.download_button("⬇️ Electrical & Plumbing", data=mod_files["BOQ_Electrical_Plumbing.xlsx"], file_name="BOQ_Electrical_Plumbing.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_mep")
+    mc7.download_button("⬇️ Additional Works (Sump/Wall)", data=mod_files["BOQ_Additional_Works.xlsx"], file_name="BOQ_Additional_Works.xlsx", mime=_xlsx_mime, use_container_width=True, key="mod_dl_add")

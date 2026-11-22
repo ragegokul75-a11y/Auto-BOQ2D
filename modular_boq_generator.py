@@ -1,17 +1,18 @@
 """
-SmartCivilTools-Style Modular AutoCAD-to-Excel BOQ Generator (9 Separate Tabs)
-Generates:
-  1. Commercial Summary (Abstract + Contingency + OHP + GST + Cost/Sqft)
-  2. Foundation & Earthwork
-  3. RCC Structure & Steel (Columns, Beams, Slabs, Staircase, Shuttering, TMT)
-  4. Masonry & Plastering (with live Opening Deductions linked from Tab 5)
-  5. Doors, Windows & Openings Schedule
-  6. Flooring, Tiles & Painting (Room-by-Room Schedule)
-  7. Electrical, Plumbing & Additional Works
-  8. Concrete & Mortar Material Mix Yield (Cement Bags, Sand, Aggregate, Bricks, Steel)
-  9. AutoCAD Raw Takeoff (Polylines imported from .DXF or AutoBOQ_SmartTools.lsp .CSV)
-
-Also supports single-part standalone Excel exports and live DXF/CSV ingestion.
+SmartCivilTools-Style Complete 12-Tab AutoCAD-to-Excel Modular BOQ Generator
+Covers 100% of Quick Building Estimator PRO & AutoCAD Civil LISP items:
+  1.  Commercial Summary (Materials / Labour / Joinery / Additional Works + Cont/OHP/GST + Rs/Sqft)
+  2.  Client BOQ & Quotation (Client Unit Rates incl. Contingency & OHP)
+  3.  Material Takeoff (Supply) — All 22 Supply Materials (Theoretical vs Wastage) + Thumb Checks
+  4.  Foundation & Basement (Excavation, Sand, PCC, Footing, Basement Fill, Anti-Termite, DPC)
+  5.  RCC Structure & Steel (Col, Plinth Beam, Beam, Slab, Staircase, Shuttering, TMT, Binding Wire, Cover Blocks)
+  6.  Masonry & Plastering (230/115 Walls, Live Opening Deduction from Tab 7, Plaster, Weathering Course, Curing)
+  7.  Doors & Windows (MD1, BD1, Bath, W1, W2, W3, V1 + Opening Area + Wood Volume CFT)
+  8.  Flooring, Tiles & Paint (Rooms, Bath, Parking Pavers, Kitchen/Bath Dado, Granite Counter/Stair, Handrail, Paints)
+  9.  Electrical & Plumbing (Wiring, DB, Toilet Sanitary, Taps/Bib Cocks, Kitchen SS Sink/Swan Neck, Civil Labour)
+  10. Additional Works (UG Sump, Septic Tank, OHT+Stand, Compound Wall, Gate, Balcony Railing, Ramp, RWH Pit)
+  11. Bank Loan Estimate (L x B x D Abstract + Stage-Wise Payment Drawdown Schedule)
+  12. AutoCAD Raw Takeoff (Polylines/Lines from .DXF or AutoBOQ_SmartTools.lsp command AD)
 """
 
 from __future__ import annotations
@@ -70,12 +71,18 @@ def _classify_layer(layer: str) -> str:
         return "FOOTING"
     if any(k in u for k in ("COL", "PIL")):
         return "COLUMN"
-    if any(k in u for k in ("BEAM", "BM", "PLINTH")):
+    if "PLINTH" in u:
+        return "PLINTH_BEAM"
+    if any(k in u for k in ("BEAM", "BM")):
         return "BEAM"
     if any(k in u for k in ("SLAB", "ROOF")):
         return "SLAB"
+    if "STAIR" in u:
+        return "STAIRCASE"
+    if any(k in u for k in ("TANK", "SUMP")):
+        return "WATER_TANK"
     if any(k in u for k in ("WALL", "MAS", "BRICK")):
-        return "MASONRY"
+        return "WALL"
     if any(k in u for k in ("DOOR", "WIN", "OPEN")):
         return "OPENING"
     return "ROOM"
@@ -98,7 +105,7 @@ def _poly_area_perim(pts: list[tuple[float, float]]) -> tuple[float, float, floa
 
 
 def parse_autocad_takeoff(file_bytes: bytes, filename: str) -> list[dict[str, Any]]:
-    """Parse AutoCAD .CSV (from AutoBOQ_SmartTools.lsp) or .DXF into normalized takeoff rows."""
+    """Parse AutoCAD .CSV (from AutoBOQ_SmartTools.lsp AD command) or .DXF into normalized rows."""
     ext = os.path.splitext(filename)[1].lower()
     rows: list[dict[str, Any]] = []
 
@@ -130,7 +137,10 @@ def parse_autocad_takeoff(file_bytes: bytes, filename: str) -> list[dict[str, An
             msp = doc.modelspace()
             ins = int(doc.header.get("$INSUNITS", 4) or 4)
             scale = {1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1.0}.get(ins, 0.001)
-            default_ht_map = {"FOOTING": 0.525, "COLUMN": 3.3, "BEAM": 0.45, "SLAB": 0.125, "MASONRY": 3.0, "OPENING": 2.1, "ROOM": 3.0}
+            default_ht_map = {
+                "FOOTING": 0.525, "COLUMN": 3.3, "PLINTH_BEAM": 0.38, "BEAM": 0.45,
+                "SLAB": 0.125, "STAIRCASE": 0.175, "WATER_TANK": 2.0, "WALL": 3.0, "OPENING": 2.1, "ROOM": 3.0,
+            }
             cnt = 0
             for ent in msp.query("LWPOLYLINE"):
                 if not ent.closed:
@@ -214,110 +224,102 @@ def _configure_print(ws, landscape: bool = True) -> None:
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
 
-def _build_standard_trade_sheet(
+def _build_trade_sheet(
     wb: Workbook,
     sheet_name: str,
     title: str,
     subtitle: str,
     rows_data: list[tuple],
 ) -> dict[str, Any]:
-    """Build a standard 11-column measurement & BOQ trade sheet (A..K)."""
+    """Standard 12-col BOQ sheet (A..L): Code, Trade, Description & First-Principles Formula, Unit, Nos, L, B, D, Qty, Rate, Amount, Basis."""
     ws = wb.create_sheet(sheet_name)
-    _banner(ws, 11, title, subtitle)
+    _banner(ws, 12, title, subtitle)
     _write_table_headers(ws, 4, [
         ("Code", 9),
-        ("Description of Work (IS 1200 / CPWD DSR)", 48),
+        ("Trade Filter", 15),
+        ("Work Description & First-Principles Formula", 48),
         ("Unit", 8),
-        ("Nos", 8),
-        ("L / Area", 10),
-        ("B", 8),
-        ("D / H", 8),
+        ("Nos", 7),
+        ("L / Area", 9),
+        ("B", 7),
+        ("D / H", 7),
         ("Quantity", 11),
         ("Rate (₹)", 12),
         ("Amount (₹)", 15),
-        ("Remarks / Basis", 22),
+        ("Scope Bucket", 16),
     ])
 
     start_r = 5
     code_rows: dict[str, int] = {}
-    for idx, (code, desc, unit, nos, lv, bv, dv, rate, rem) in enumerate(rows_data):
+    for idx, (code, trade, desc, unit, nos, lv, bv, dv, rate, scope) in enumerate(rows_data):
         r = start_r + idx
         code_rows[code] = r
         ws.row_dimensions[r].height = 30 if len(desc) > 80 else 23
         ws.cell(r, 1, code).alignment = ALIGN_C
-        ws.cell(r, 2, desc).alignment = ALIGN_L
-        ws.cell(r, 3, unit).alignment = ALIGN_C
-        ws.cell(r, 4, nos).alignment = ALIGN_C
-        ws.cell(r, 5, lv).alignment = ALIGN_R
-        ws.cell(r, 6, bv).alignment = ALIGN_R
-        ws.cell(r, 7, dv).alignment = ALIGN_R
-        ws.cell(r, 8, f"=ROUND(D{r}*E{r}*F{r}*G{r}, 2)").alignment = ALIGN_R
-        ws.cell(r, 9, rate).alignment = ALIGN_R
-        ws.cell(r, 10, f"=ROUND(H{r}*I{r}, 2)").alignment = ALIGN_R
-        ws.cell(r, 11, rem).alignment = ALIGN_L
+        ws.cell(r, 2, trade).alignment = ALIGN_C
+        ws.cell(r, 3, desc).alignment = ALIGN_L
+        ws.cell(r, 4, unit).alignment = ALIGN_C
+        ws.cell(r, 5, nos).alignment = ALIGN_C
+        ws.cell(r, 6, lv).alignment = ALIGN_R
+        ws.cell(r, 7, bv).alignment = ALIGN_R
+        ws.cell(r, 8, dv).alignment = ALIGN_R
+        ws.cell(r, 9, f"=ROUND(E{r}*F{r}*G{r}*H{r}, 2)").alignment = ALIGN_R
+        ws.cell(r, 10, rate).alignment = ALIGN_R
+        ws.cell(r, 11, f"=ROUND(I{r}*J{r}, 2)").alignment = ALIGN_R
+        ws.cell(r, 12, scope).alignment = ALIGN_C
 
-        for ci in range(1, 12):
+        for ci in range(1, 13):
             c = ws.cell(r, ci)
             c.border = BORDER_GRID
-            is_formula_input = isinstance(c.value, str) and c.value.startswith("=")
-            if ci in (4, 5, 6, 7, 9) and not is_formula_input:
+            is_fml = isinstance(c.value, str) and c.value.startswith("=")
+            if ci in (5, 6, 7, 8, 10) and not is_fml:
                 c.fill = FILL_INPUT
                 c.font = FONT_INPUT
             else:
                 c.fill = FILL_CALC
-                c.font = FONT_BOLD if ci == 10 else FONT_DATA
-        for ci in (5, 6, 7, 8):
+                c.font = FONT_BOLD if ci == 11 else FONT_DATA
+        for ci in (6, 7, 8, 9):
             ws.cell(r, ci).number_format = "#,##0.00"
-        ws.cell(r, 9).number_format = "₹#,##0.00"
         ws.cell(r, 10).number_format = "₹#,##0.00"
+        ws.cell(r, 11).number_format = "₹#,##0.00"
 
     end_r = start_r + len(rows_data) - 1
     tot_r = end_r + 1
     ws.row_dimensions[tot_r].height = 24
-    ws.merge_cells(start_row=tot_r, start_column=1, end_row=tot_r, end_column=9)
+    ws.merge_cells(start_row=tot_r, start_column=1, end_row=tot_r, end_column=10)
     ws.cell(tot_r, 1, f"SUB-TOTAL — {sheet_name.upper()}").alignment = ALIGN_R
-    ws.cell(tot_r, 10, f"=SUM(J{start_r}:J{end_r})").alignment = ALIGN_R
-    ws.cell(tot_r, 10).number_format = "₹#,##0.00"
-    for ci in range(1, 12):
-        ws.cell(tot_r, ci).fill = FILL_GREEN if ci == 10 else FILL_TOTAL
+    ws.cell(tot_r, 11, f"=SUM(K{start_r}:K{end_r})").alignment = ALIGN_R
+    ws.cell(tot_r, 11).number_format = "₹#,##0.00"
+    for ci in range(1, 13):
+        ws.cell(tot_r, ci).fill = FILL_GREEN if ci == 11 else FILL_TOTAL
         ws.cell(tot_r, ci).font = FONT_BOLD
         ws.cell(tot_r, ci).border = BORDER_TOT
 
     ws.freeze_panes = "A5"
     _configure_print(ws, landscape=True)
-    return {"sheet_name": sheet_name, "total_row": tot_r, "code_rows": code_rows}
+    return {"sheet_name": sheet_name, "total_row": tot_r, "code_rows": code_rows, "amount_col": "K", "qty_col": "I"}
 
 
 # ---------------------------------------------------------------------------
-# Individual Modular Sheet Builders
+# Specialized Sheet Builders
 # ---------------------------------------------------------------------------
 def build_autocad_raw_sheet(wb: Workbook, raw_rows: list[dict[str, Any]]) -> dict[str, Any]:
-    ws = wb.create_sheet("9. AutoCAD Raw Takeoff")
+    ws = wb.create_sheet("12. AutoCAD Raw Takeoff")
     _banner(
         ws,
         10,
-        "AUTOCAD RAW POLYLINE TAKEOFF (IMPORTED FROM .DXF OR AutoBOQ_SmartTools.lsp .CSV)",
-        "Auto-extracted element areas, perimeters, and bounding dimensions by building part.",
+        "AUTOCAD RAW POLYLINE TAKEOFF & ROOM DIMENSIONS SCHEDULE",
+        "Imported from .DXF or AutoBOQ_SmartTools.lsp (Command: AD — Footing, Column, Beam, Slab, Staircase, Water Tank, Wall, Room).",
     )
     _write_table_headers(ws, 4, [
-        ("S.No", 7),
-        ("Part Category", 14),
-        ("AutoCAD Layer", 16),
-        ("Mark / Room", 18),
-        ("Nos", 8),
-        ("Area (m²)", 11),
-        ("Perimeter (m)", 12),
-        ("Length (m)", 11),
-        ("Width (m)", 11),
-        ("Depth/Ht (m)", 12),
+        ("S.No", 7), ("Part Category", 14), ("AutoCAD Layer", 15), ("Mark / Room", 18),
+        ("Nos", 7), ("Area (m²)", 11), ("Perimeter (m)", 12), ("Length (m)", 10),
+        ("Width (m)", 10), ("Depth/Ht (m)", 11),
     ])
-    for idx, rdata in enumerate(raw_rows, start=1):
+    for idx, rd in enumerate(raw_rows, start=1):
         r = 4 + idx
         ws.row_dimensions[r].height = 21
-        vals = [
-            idx, rdata["part"], rdata["layer"], rdata["mark"], rdata["nos"],
-            rdata["area_m2"], rdata["perim_m"], rdata["len_m"], rdata["wid_m"], rdata["ht_m"],
-        ]
+        vals = [idx, rd["part"], rd["layer"], rd["mark"], rd["nos"], rd["area_m2"], rd["perim_m"], rd["len_m"], rd["wid_m"], rd["ht_m"]]
         for ci, v in enumerate(vals, start=1):
             c = ws.cell(r, ci, v)
             c.border = BORDER_GRID
@@ -328,39 +330,40 @@ def build_autocad_raw_sheet(wb: Workbook, raw_rows: list[dict[str, Any]]) -> dic
                 c.number_format = "#,##0.000"
     ws.freeze_panes = "A5"
     _configure_print(ws, landscape=True)
-    return {"sheet_name": ws.title, "row_count": len(raw_rows)}
+    return {"sheet_name": ws.title}
 
 
-def build_doors_windows_sheet(wb: Workbook, params: dict[str, Any]) -> dict[str, Any]:
-    ws = wb.create_sheet("5. Doors & Windows")
+def build_doors_windows_sheet(wb: Workbook) -> dict[str, Any]:
+    ws = wb.create_sheet("7. Doors & Windows")
     _banner(
         ws,
-        9,
-        "DOORS, WINDOWS & OPENINGS SCHEDULE (LINKED TO MASONRY & PLASTER DEDUCTIONS)",
-        "Total Opening Area in Col F automatically feeds Masonry & Plaster deduction formulas on Tab 4.",
+        10,
+        "MODULE 4: DOORS, WINDOWS & OPENINGS SCHEDULE (JOINERY + WOOD CFT)",
+        "Opening Area (Col F) automatically feeds Masonry Deductions on Tab 6; Wood Volume (Col G) feeds Material Takeoff on Tab 3.",
     )
     _write_table_headers(ws, 4, [
-        ("Mark", 9),
-        ("Opening Description (Frame, Shutter & Hardware)", 44),
-        ("Nos", 8),
-        ("Width (m)", 10),
-        ("Height (m)", 10),
-        ("Total Area (m²)", 13),
-        ("Rate / No (₹)", 13),
-        ("Amount (₹)", 15),
-        ("Remarks", 20),
+        ("Mark", 8), ("Opening Description (Frame, Shutter, Grill & Hardware)", 44),
+        ("Nos", 7), ("Width (m)", 9), ("Height (m)", 9), ("Area (m²)", 11),
+        ("Wood (CFT)", 11), ("Rate / No (₹)", 13), ("Amount (₹)", 15), ("Trade", 14),
     ])
     openings = [
-        ("MD", "Main Entrance Teakwood Panelled Door (1.20×2.10 m) with SS brass hardware", 1, 1.20, 2.10, 28500.0, "Teak frame + polish"),
-        ("D1", "Bedroom Flush Door (1.00×2.10 m) with laminate finish & mortise lock", 3, 1.00, 2.10, 14500.0, "WPC / Hardwood frame"),
-        ("D2", "Toilet / Utility Waterproof WPC Door (0.80×2.10 m) with SS fittings", 2, 0.80, 2.10, 9800.0, "Waterproof WPC"),
-        ("W1", "UPVC 3-Track Sliding Window (1.50×1.35 m) with 5 mm clear glass & mosquito mesh", 5, 1.50, 1.35, 13200.0, "Living & Bedrooms"),
-        ("W2", "UPVC 2-Track Sliding Window (1.20×1.20 m) with MS safety grill", 2, 1.20, 1.20, 10500.0, "Kitchen & Lobby"),
-        ("V1", "UPVC Louvered Ventilator (0.60×0.60 m) with exhaust fan cutout", 2, 0.60, 0.60, 3600.0, "Bathrooms"),
+        ("MD1", "Main Entrance Teakwood Panelled Door (1.20×2.10 m) with brass fittings & polish", 1, 1.20, 2.10, 8.50, 32000.0, "Carpentry / Doors"),
+        ("BD1", "Bedroom Flush Door (1.00×2.10 m) with Sal/WPC frame, laminate & mortise lock", 3, 1.00, 2.10, 4.80, 14800.0, "Carpentry / Doors"),
+        ("D2",  "Bathroom Waterproof WPC Door (0.80×2.10 m) with SS hinges & tower bolts", 2, 0.80, 2.10, 0.00, 9800.0, "Carpentry / Doors"),
+        ("W1",  "UPVC 3-Track Sliding Window (1.50×1.35 m) with 5 mm glass, mesh & MS grill", 4, 1.50, 1.35, 0.00, 13500.0, "Carpentry / Doors"),
+        ("W2",  "UPVC 2-Track Sliding Window (1.20×1.20 m) with MS safety grill (Kitchen)", 2, 1.20, 1.20, 0.00, 10600.0, "Carpentry / Doors"),
+        ("W3",  "UPVC Staircase / Lobby Fixed + Casement Window (1.00×1.50 m) with grill", 1, 1.00, 1.50, 0.00, 9500.0, "Carpentry / Doors"),
+        ("V1",  "UPVC Louvered Bathroom Ventilator (0.60×0.60 m) with exhaust fan opening", 2, 0.60, 0.60, 0.00, 3800.0, "Carpentry / Doors"),
     ]
     start_r = 5
-    for idx, (mk, desc, nos, w, h, rate, rem) in enumerate(openings):
+    tot_wood_cft = 0.0
+    tot_open_area = 0.0
+    tot_amt = 0.0
+    for idx, (mk, desc, nos, w, h, cft_per, rate, trade) in enumerate(openings):
         r = start_r + idx
+        tot_open_area += round(nos * w * h, 2)
+        tot_wood_cft += round(nos * cft_per, 2)
+        tot_amt += round(nos * rate, 2)
         ws.row_dimensions[r].height = 24
         ws.cell(r, 1, mk).alignment = ALIGN_C
         ws.cell(r, 2, desc).alignment = ALIGN_L
@@ -368,152 +371,335 @@ def build_doors_windows_sheet(wb: Workbook, params: dict[str, Any]) -> dict[str,
         ws.cell(r, 4, w).alignment = ALIGN_R
         ws.cell(r, 5, h).alignment = ALIGN_R
         ws.cell(r, 6, f"=ROUND(C{r}*D{r}*E{r}, 2)").alignment = ALIGN_R
-        ws.cell(r, 7, rate).alignment = ALIGN_R
-        ws.cell(r, 8, f"=ROUND(C{r}*G{r}, 2)").alignment = ALIGN_R
-        ws.cell(r, 9, rem).alignment = ALIGN_L
-        for ci in range(1, 10):
+        ws.cell(r, 7, f"=ROUND(C{r}*{cft_per}, 2)").alignment = ALIGN_R
+        ws.cell(r, 8, rate).alignment = ALIGN_R
+        ws.cell(r, 9, f"=ROUND(C{r}*H{r}, 2)").alignment = ALIGN_R
+        ws.cell(r, 10, trade).alignment = ALIGN_C
+        for ci in range(1, 11):
             c = ws.cell(r, ci)
             c.border = BORDER_GRID
-            if ci in (3, 4, 5, 7):
+            if ci in (3, 4, 5, 8):
                 c.fill = FILL_INPUT
                 c.font = FONT_INPUT
             else:
                 c.fill = FILL_CALC
-                c.font = FONT_BOLD if ci in (6, 8) else FONT_DATA
-        for ci in (4, 5, 6):
+                c.font = FONT_BOLD if ci in (6, 9) else FONT_DATA
+        for ci in (4, 5, 6, 7):
             ws.cell(r, ci).number_format = "#,##0.00"
-        ws.cell(r, 7).number_format = "₹#,##0.00"
         ws.cell(r, 8).number_format = "₹#,##0.00"
+        ws.cell(r, 9).number_format = "₹#,##0.00"
 
     end_r = start_r + len(openings) - 1
     tot_r = end_r + 1
     ws.row_dimensions[tot_r].height = 24
     ws.merge_cells(start_row=tot_r, start_column=1, end_row=tot_r, end_column=5)
-    ws.cell(tot_r, 1, "TOTAL OPENINGS AREA (m²) & DOORS/WINDOWS COST").alignment = ALIGN_R
+    ws.cell(tot_r, 1, "TOTAL OPENINGS AREA (m²), WOOD (CFT) & JOINERY COST").alignment = ALIGN_R
     ws.cell(tot_r, 6, f"=SUM(F{start_r}:F{end_r})").alignment = ALIGN_R
     ws.cell(tot_r, 6).number_format = "#,##0.00"
-    ws.cell(tot_r, 8, f"=SUM(H{start_r}:H{end_r})").alignment = ALIGN_R
-    ws.cell(tot_r, 8).number_format = "₹#,##0.00"
-    for ci in range(1, 10):
-        ws.cell(tot_r, ci).fill = FILL_GREEN if ci == 8 else FILL_TOTAL
+    ws.cell(tot_r, 7, f"=SUM(G{start_r}:G{end_r})").alignment = ALIGN_R
+    ws.cell(tot_r, 7).number_format = "#,##0.00"
+    ws.cell(tot_r, 9, f"=SUM(I{start_r}:I{end_r})").alignment = ALIGN_R
+    ws.cell(tot_r, 9).number_format = "₹#,##0.00"
+    for ci in range(1, 11):
+        ws.cell(tot_r, ci).fill = FILL_GREEN if ci == 9 else FILL_TOTAL
         ws.cell(tot_r, ci).font = FONT_BOLD
         ws.cell(tot_r, ci).border = BORDER_TOT
 
     ws.freeze_panes = "A5"
     _configure_print(ws, landscape=True)
-    return {"sheet_name": ws.title, "total_row": tot_r, "area_col": "F", "amount_col": "H"}
+    return {
+        "sheet_name": ws.title,
+        "total_row": tot_r,
+        "area_col": "F",
+        "wood_col": "G",
+        "amount_col": "I",
+        "tot_open_area": round(tot_open_area, 2),
+        "tot_wood_cft": round(tot_wood_cft, 2),
+        "tot_amt": round(tot_amt, 2),
+    }
 
 
-def build_material_mix_yield_sheet(
+def build_material_takeoff_sheet(
     wb: Workbook,
-    f_ref: dict[str, Any],
-    r_ref: dict[str, Any],
-    m_ref: dict[str, Any],
-    static_qty: dict[str, float] | None = None,
+    metrics: dict[str, float],
+    builtup_sqft: float,
+    steel_rate: float = 82.0,
 ) -> dict[str, Any]:
-    """Tab 8: Concrete, Mortar, Brick & Steel Procurement Mix Yield."""
-    ws = wb.create_sheet("8. Material Mix Yield")
+    """Tab 3: Complete 22-Item Material Take-Off Statement (Theoretical vs Procurement with Wastage) + Thumb Checks."""
+    ws = wb.create_sheet("3. Material Takeoff (Supply)")
     _banner(
         ws,
         8,
-        "CONCRETE, MORTAR & STEEL MATERIAL MIX YIELD (PROCUREMENT ABSTRACT)",
-        "Auto-calculates Cement (50 kg bags), M-Sand (Cum/CFT), Aggregate (Cum/CFT), Bricks & TMT Steel from Tabs 2–4.",
+        "MATERIAL TAKE-OFF STATEMENT (SUPPLY ONLY) — THEORETICAL vs. PROCUREMENT WITH WASTAGE",
+        "Covers all 22 core supply materials (Cement, M-Sand, P-Sand, 20mm/40mm Agg, Steel, Bricks, Timber, Putty, Paints, Binding Wire, Cover Blocks).",
     )
     _write_table_headers(ws, 4, [
-        ("S.No", 7),
-        ("Material / Mix Component", 42),
-        ("Base Work Qty", 13),
-        ("Base Unit", 9),
-        ("Yield Factor", 13),
-        ("Procurement Qty", 14),
-        ("Proc. Unit", 10),
-        ("Engineering Basis", 28),
+        ("S.No", 6),
+        ("Material Name (Supply Only)", 42),
+        ("Theoretical Qty", 14),
+        ("Wastage %", 10),
+        ("Qty w/ Wastage", 14),
+        ("Unit", 11),
+        ("Unit Rate (₹)", 12),
+        ("Total Supply Cost (₹)", 16),
     ])
 
-    if static_qty:
-        pcc_expr = static_qty["pcc_cum"]
-        rcc_expr = static_qty["rcc_cum"]
-        mas_expr = static_qty["mas_cum"]
-        pls_expr = static_qty["pls_sqm"]
-        stl_expr = static_qty["steel_kg"]
-    else:
-        fs = f"'{f_ref['sheet_name']}'"
-        rs = f"'{r_ref['sheet_name']}'"
-        ms = f"'{m_ref['sheet_name']}'"
-        pcc_expr = f"={fs}!H{f_ref['code_rows']['FD-03']}"
-        rcc_expr = (
-            f"={fs}!H{f_ref['code_rows']['FD-04']}"
-            f"+{rs}!H{r_ref['code_rows']['RC-01']}"
-            f"+{rs}!H{r_ref['code_rows']['RC-02']}"
-            f"+{rs}!H{r_ref['code_rows']['RC-03']}"
-            f"+{rs}!H{r_ref['code_rows']['RC-04']}"
-        )
-        mas_expr = f"={ms}!H{m_ref['code_rows']['MS-01']}+{ms}!H{m_ref['code_rows']['MS-02']}+{ms}!H{m_ref['code_rows']['MS-03']}"
-        pls_expr = f"={ms}!H{m_ref['code_rows']['PL-01']}+{ms}!H{m_ref['code_rows']['PL-02']}+{ms}!H{m_ref['code_rows']['PL-03']}"
-        stl_expr = f"={rs}!H{r_ref['code_rows']['RC-06']}"
+    rcc_v = metrics["rcc_cum"]
+    pcc_v = metrics["pcc_cum"]
+    mas_v = metrics["mas_cum"]
+    pls_a = metrics["pls_sqm"]
+    int_p = metrics["int_paint_sqm"]
+    ext_p = metrics["ext_paint_sqm"]
+    enm_p = metrics["enamel_sqm"]
+    stl_k = metrics["steel_kg"]
+    shut_a = metrics["shuttering_sqm"]
+    grvl_v = metrics["gravel_cum"]
+    wood_c = metrics["wood_cft"]
 
-    # Material yield rows: (Label, BaseFormula, BaseUnit, Factor, ProcUnit, Basis)
-    yield_rows = [
-        ("Cement — M25 RCC Concrete (1:1:2 / Design ~8.2 bags/m³)", rcc_expr, "Cum", 8.20, "Bags (50kg)", "410 kg/m³ nominal M25 yield"),
-        ("M-Sand — M25 RCC Concrete (0.44 m³/m³)", rcc_expr, "Cum", 0.44, "Cum", "× 35.315 for CFT"),
-        ("20 mm Aggregate — M25 RCC Concrete (0.86 m³/m³)", rcc_expr, "Cum", 0.86, "Cum", "× 35.315 for CFT"),
-        ("Cement — PCC 1:4:8 Levelling Bed (3.4 bags/m³)", pcc_expr, "Cum", 3.40, "Bags (50kg)", "170 kg/m³ dry vol 1.54×"),
-        ("Sand — PCC 1:4:8 (0.47 m³/m³)", pcc_expr, "Cum", 0.47, "Cum", "IS 456 blinding bed"),
-        ("40 mm Aggregate — PCC 1:4:8 (0.94 m³/m³)", pcc_expr, "Cum", 0.94, "Cum", "IS 456 blinding bed"),
-        ("Clay Bricks / Solid Blocks — Masonry (500 nos/m³)", mas_expr, "Cum", 500.0, "Nos", "Standard 190×90×90 mm + mortar"),
-        ("Cement — Masonry Mortar CM 1:6 (1.25 bags/m³)", mas_expr, "Cum", 1.25, "Bags (50kg)", "0.25 m³ wet mortar / m³ wall"),
-        ("Sand — Masonry Mortar CM 1:6 (0.27 m³/m³)", mas_expr, "Cum", 0.27, "Cum", "Includes 30% dry bulking"),
-        ("Cement — Plastering CM 1:5 avg 15 mm (0.12 bags/m²)", pls_expr, "Sqm", 0.12, "Bags (50kg)", "Internal + External + Ceiling"),
-        ("Plaster Sand — CM 1:5 avg 15 mm (0.021 m³/m²)", pls_expr, "Sqm", 0.021, "Cum", "Screened fine river/M-sand"),
-        ("TMT Fe-500D Reinforcement Steel (+3% Wastage)", stl_expr, "kg", 1.03, "kg", "Gross procurement weight"),
-        ("TMT Fe-500D Steel in Metric Tonnes (MT)", stl_expr, "kg", 0.00103, "MT", "Gross steel ÷ 1000"),
+    cement_th = round(rcc_v * 8.2 + pcc_v * 3.4 + mas_v * 1.25 + pls_a * 0.12, 1)
+    msand_th = round(rcc_v * 0.44 + pcc_v * 0.47 + mas_v * 0.27, 2)
+    psand_th = round(pls_a * 0.021, 2)
+    agg20_th = round(rcc_v * 0.86, 2)
+    agg40_th = round(pcc_v * 0.94, 2)
+    bricks_th = round(mas_v * 500.0, 0)
+    w_cem_th = round((int_p + ext_p) * 0.008, 1)
+    putty_th = round(int_p * 0.045, 1)       # 40 kg bags
+    iprim_th = round(int_p / 11.0, 1)        # Ltrs
+    ipnt_th = round(int_p / 7.5, 1)          # Ltrs (2 coats)
+    eprim_th = round(ext_p / 10.0, 1)
+    epnt_th = round(ext_p / 7.0, 1)
+    enml_th = round(enm_p / 8.0, 1)
+    redox_th = round(enm_p / 11.0, 1)
+    thin_th = round((enml_th + redox_th) * 0.25, 1)
+    nails_th = round(shut_a * 0.12, 1)       # kg
+    bwire_th = round((stl_k / 1000.0) * 10.0, 1)  # 10 kg per MT of rebar
+    cblks_th = round(shut_a * 3.0, 0)        # 3 cover blocks / Sqm
+
+    # (Material, TheoQty, WastagePct, Unit, RateINR)
+    mats = [
+        ("Cement (OPC 53 / PPC — 50 kg bags)", cement_th, 0.03, "Bags", 395.0),
+        ("M-Sand (Concrete & Masonry)", msand_th, 0.05, "Cum", 1750.0),
+        ("P-Sand (Fine Screened Plastering Sand)", psand_th, 0.05, "Cum", 1950.0),
+        ("Coarse Aggregate 20 mm (RCC Concrete)", agg20_th, 0.05, "Cum", 1450.0),
+        ("Coarse Aggregate 40 mm (PCC & Base)", agg40_th, 0.05, "Cum", 1300.0),
+        ("Gravel / Filling Earth (Foundations & Basement)", grvl_v, 0.10, "Cum", 550.0),
+        ("Reinforcement Steel (TMT Fe-500D / Fe-550D)", stl_k, 0.03, "kg", steel_rate),
+        ("Bricks / Solid Masonry Blocks (190×90×90 mm)", bricks_th, 0.05, "Nos", 9.50),
+        ("Joinery Timber / Teak & Sal Wood Volume", wood_c, 0.05, "CFT", 2600.0),
+        ("White Cement (50 kg bags — base finish)", w_cem_th, 0.03, "Bags", 1050.0),
+        ("Wall Putty (40 kg bags — 2 coats internal)", putty_th, 0.05, "Bags", 820.0),
+        ("Interior Wall Primer (Water-Based)", iprim_th, 0.05, "Ltrs", 210.0),
+        ("Interior Acrylic Emulsion Paint (2 coats)", ipnt_th, 0.05, "Ltrs", 420.0),
+        ("Exterior Weather-Shield Primer", eprim_th, 0.05, "Ltrs", 240.0),
+        ("Exterior Weatherproof Emulsion Paint (2 coats)", epnt_th, 0.05, "Ltrs", 480.0),
+        ("Synthetic Enamel Paint (Grills & Frames)", enml_th, 0.05, "Ltrs", 340.0),
+        ("Red Oxide / Zinc Chromate Metal Primer", redox_th, 0.05, "Ltrs", 220.0),
+        ("Paint Thinner (Mineral Turpentine Oil)", thin_th, 0.05, "Ltrs", 140.0),
+        ("Steel Wire Nails (Shuttering & Formwork)", nails_th, 0.05, "kg", 95.0),
+        ("Rebar Binding Wire (GI 18-Gauge — 10 kg/MT)", bwire_th, 0.05, "kg", 110.0),
+        ("Concrete Cover Blocks (20 / 25 / 40 / 50 mm)", cblks_th, 0.05, "Nos", 6.00),
+        ("Centring & Shuttering Material Contact Area", shut_a, 0.00, "Sqm", 260.0),
     ]
 
-    for idx, (lbl, b_expr, b_unit, fac, p_unit, basis) in enumerate(yield_rows, start=1):
-        r = 4 + idx
-        ws.row_dimensions[r].height = 23
+    start_r = 5
+    tot_supply = 0.0
+    for idx, (name, theo, wast, unit, rate) in enumerate(mats, start=1):
+        r = start_r + idx - 1
+        qty_w = round(theo * (1.0 + wast), 2)
+        tot_supply += round(qty_w * rate, 2)
+        ws.row_dimensions[r].height = 22
         ws.cell(r, 1, idx).alignment = ALIGN_C
-        ws.cell(r, 2, lbl).alignment = ALIGN_L
-        ws.cell(r, 3, b_expr).alignment = ALIGN_R
-        ws.cell(r, 4, b_unit).alignment = ALIGN_C
-        ws.cell(r, 5, fac).alignment = ALIGN_R
-        ws.cell(r, 6, f"=ROUND(C{r}*E{r}, 2)").alignment = ALIGN_R
-        ws.cell(r, 7, p_unit).alignment = ALIGN_C
-        ws.cell(r, 8, basis).alignment = ALIGN_L
+        ws.cell(r, 2, name).alignment = ALIGN_L
+        ws.cell(r, 3, theo).alignment = ALIGN_R
+        ws.cell(r, 4, wast).alignment = ALIGN_C
+        ws.cell(r, 5, f"=ROUND(C{r}*(1+D{r}), 2)").alignment = ALIGN_R
+        ws.cell(r, 6, unit).alignment = ALIGN_C
+        ws.cell(r, 7, rate).alignment = ALIGN_R
+        ws.cell(r, 8, f"=ROUND(E{r}*G{r}, 2)").alignment = ALIGN_R
         for ci in range(1, 9):
             c = ws.cell(r, ci)
             c.border = BORDER_GRID
-            if ci == 5:
+            if ci in (3, 4, 7):
                 c.fill = FILL_INPUT
                 c.font = FONT_INPUT
             else:
                 c.fill = FILL_CALC
-                c.font = FONT_BOLD if ci == 6 else FONT_DATA
+                c.font = FONT_BOLD if ci in (5, 8) else FONT_DATA
         ws.cell(r, 3).number_format = "#,##0.00"
-        ws.cell(r, 5).number_format = "#,##0.000"
-        ws.cell(r, 6).number_format = "#,##0.00"
+        ws.cell(r, 4).number_format = "0.0%"
+        ws.cell(r, 5).number_format = "#,##0.00"
+        ws.cell(r, 7).number_format = "₹#,##0.00"
+        ws.cell(r, 8).number_format = "₹#,##0.00"
 
-    # Summary Procurement Totals (Cement Bags, Total Sand Cum & CFT, Total Agg Cum)
-    sr = 4 + len(yield_rows) + 2
-    summary_lines = [
-        ("TOTAL CEMENT REQUIRED (50 kg BAGS)", "=ROUND(F5+F8+F12+F14, 0)", "Bags", "RCC + PCC + Masonry + Plaster"),
-        ("TOTAL SAND REQUIRED (M-SAND / RIVER SAND)", "=ROUND(F6+F9+F13+F15, 2)", "Cum", "Multiply by 35.315 for CFT"),
-        ("TOTAL COARSE AGGREGATE (20 mm + 40 mm)", "=ROUND(F7+F10, 2)", "Cum", "Multiply by 35.315 for CFT"),
-        ("TOTAL GROSS TMT STEEL (Fe-500D)", "=F17", "MT", "Includes 3% rolling & cutting wastage"),
+    end_r = start_r + len(mats) - 1
+    tot_r = end_r + 1
+    ws.row_dimensions[tot_r].height = 25
+    ws.merge_cells(start_row=tot_r, start_column=1, end_row=tot_r, end_column=7)
+    ws.cell(tot_r, 1, "TOTAL ESTIMATED MATERIAL PROCUREMENT COST (SUPPLY ONLY)").alignment = ALIGN_R
+    ws.cell(tot_r, 8, f"=SUM(H{start_r}:H{end_r})").alignment = ALIGN_R
+    ws.cell(tot_r, 8).number_format = "₹#,##0.00"
+    for ci in range(1, 9):
+        ws.cell(tot_r, ci).fill = FILL_GREEN if ci == 8 else FILL_TOTAL
+        ws.cell(tot_r, ci).font = FONT_BOLD
+        ws.cell(tot_r, ci).border = BORDER_TOT
+
+    # Key Material Consumption Thumb Checks (per Sq.ft)
+    chk_r = tot_r + 2
+    ws.row_dimensions[chk_r].height = 23
+    ws.merge_cells(start_row=chk_r, start_column=1, end_row=chk_r, end_column=8)
+    ws.cell(chk_r, 1, "KEY MATERIAL CONSUMPTION THUMB-RULE CHECKS (PER SQ.FT BUILT-UP AREA)").font = FONT_SEC
+    ws.cell(chk_r, 1).fill = FILL_SEC
+    for ci in range(1, 9):
+        ws.cell(chk_r, ci).fill = FILL_SEC
+        ws.cell(chk_r, ci).border = BORDER_HDR
+
+    checks = [
+        ("Cement Consumption (Bags / Sq.ft)", f"=ROUND(E5/{builtup_sqft:.2f}, 2)", "Bags / Sq.ft", "Typical: 0.40 - 0.55 Bags/Sq.ft"),
+        ("TMT Steel Consumption (kg / Sq.ft)", f"=ROUND(E11/{builtup_sqft:.2f}, 2)", "kg / Sq.ft", "Typical: 3.50 - 4.80 kg/Sq.ft"),
+        ("Bricks / Blocks (Nos / Sq.ft)", f"=ROUND(E12/{builtup_sqft:.2f}, 1)", "Nos / Sq.ft", "Typical: 18.0 - 28.0 Nos/Sq.ft"),
     ]
-    for off, (lbl, fml, unit, note) in enumerate(summary_lines):
-        r = sr + off
-        ws.row_dimensions[r].height = 23
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
-        ws.cell(r, 1, lbl).alignment = ALIGN_R
-        ws.cell(r, 6, fml).alignment = ALIGN_R
-        ws.cell(r, 6).number_format = "#,##0.00"
-        ws.cell(r, 7, unit).alignment = ALIGN_C
-        ws.cell(r, 8, note).alignment = ALIGN_L
+    for off, (lbl, fml, u, norm) in enumerate(checks, start=1):
+        rr = chk_r + off
+        ws.row_dimensions[rr].height = 21
+        ws.merge_cells(start_row=rr, start_column=1, end_row=rr, end_column=4)
+        ws.cell(rr, 1, lbl).alignment = ALIGN_L
+        ws.cell(rr, 5, fml).alignment = ALIGN_R
+        ws.cell(rr, 5).number_format = "#,##0.00"
+        ws.cell(rr, 6, u).alignment = ALIGN_C
+        ws.merge_cells(start_row=rr, start_column=7, end_row=rr, end_column=8)
+        ws.cell(rr, 7, norm).alignment = ALIGN_L
         for ci in range(1, 9):
-            ws.cell(r, ci).fill = FILL_GREEN if ci == 6 else FILL_AMBER
-            ws.cell(r, ci).font = FONT_BOLD
-            ws.cell(r, ci).border = BORDER_TOT
+            ws.cell(rr, ci).fill = FILL_AMBER if ci == 5 else FILL_CALC
+            ws.cell(rr, ci).font = FONT_BOLD if ci == 5 else FONT_DATA
+            ws.cell(rr, ci).border = BORDER_GRID
+
+    ws.freeze_panes = "A5"
+    _configure_print(ws, landscape=True)
+    return {"sheet_name": ws.title, "total_row": tot_r, "amount_col": "H", "tot_supply": round(tot_supply, 2), "mats": mats}
+
+
+def build_client_boq_sheet(
+    wb: Workbook,
+    all_trade_rows: list[tuple],
+    cont_pct: float,
+    ohp_pct: float,
+) -> dict[str, Any]:
+    """Tab 2: Client-Facing Quotation BOQ (Unit Rates bake in Contingency % + Overheads & Profit %)."""
+    ws = wb.create_sheet("2. Client BOQ & Quotation")
+    _banner(
+        ws,
+        7,
+        "CLIENT QUOTATION & PRICED BOQ (COMMERCIAL UNIT RATES INCL. CONTINGENCY & OHP)",
+        f"Commercial Markup Applied: +{cont_pct*100:.1f}% Contingency & +{ohp_pct*100:.1f}% Overheads/Profit baked transparently into Client Unit Rates.",
+    )
+    ws.row_dimensions[3].height = 20
+    ws.cell(3, 1, "Markup Factor:").font = FONT_BOLD
+    ws.cell(3, 2, round(1.0 + cont_pct + ohp_pct, 4)).font = FONT_INPUT
+    ws.cell(3, 2).fill = FILL_INPUT
+    ws.cell(3, 2).number_format = "0.000"
+    ws.cell(3, 3, "Client Unit Rate = Internal Rate × $B$3 (Editable Markup)").font = FONT_DATA
+
+    _write_table_headers(ws, 4, [
+        ("Code", 9), ("Trade", 16), ("Item Description (Client BOQ)", 52),
+        ("Unit", 8), ("Quantity", 11), ("Client Rate (₹)", 14), ("Client Amount (₹)", 16),
+    ])
+
+    start_r = 5
+    for idx, (code, trade, desc, unit, qty, int_rate) in enumerate(all_trade_rows):
+        r = start_r + idx
+        ws.row_dimensions[r].height = 24
+        ws.cell(r, 1, code).alignment = ALIGN_C
+        ws.cell(r, 2, trade).alignment = ALIGN_C
+        ws.cell(r, 3, desc).alignment = ALIGN_L
+        ws.cell(r, 4, unit).alignment = ALIGN_C
+        ws.cell(r, 5, qty).alignment = ALIGN_R
+        ws.cell(r, 6, f"=ROUND({int_rate}*$B$3, 2)").alignment = ALIGN_R
+        ws.cell(r, 7, f"=ROUND(E{r}*F{r}, 2)").alignment = ALIGN_R
+        for ci in range(1, 8):
+            c = ws.cell(r, ci)
+            c.border = BORDER_GRID
+            c.fill = FILL_CALC
+            c.font = FONT_BOLD if ci == 7 else FONT_DATA
+        ws.cell(r, 5).number_format = "#,##0.00"
+        ws.cell(r, 6).number_format = "₹#,##0.00"
+        ws.cell(r, 7).number_format = "₹#,##0.00"
+
+    end_r = start_r + len(all_trade_rows) - 1
+    tot_r = end_r + 1
+    ws.row_dimensions[tot_r].height = 25
+    ws.merge_cells(start_row=tot_r, start_column=1, end_row=tot_r, end_column=6)
+    ws.cell(tot_r, 1, "TOTAL CLIENT QUOTATION VALUE (BEFORE GST)").alignment = ALIGN_R
+    ws.cell(tot_r, 7, f"=SUM(G{start_r}:G{end_r})").alignment = ALIGN_R
+    ws.cell(tot_r, 7).number_format = "₹#,##0.00"
+    for ci in range(1, 8):
+        ws.cell(tot_r, ci).fill = FILL_GREEN if ci == 7 else FILL_TOTAL
+        ws.cell(tot_r, ci).font = FONT_BOLD
+        ws.cell(tot_r, ci).border = BORDER_TOT
+
+    ws.freeze_panes = "A5"
+    _configure_print(ws, landscape=True)
+    return {"sheet_name": ws.title, "total_row": tot_r}
+
+
+def build_bank_loan_estimate_sheet(
+    wb: Workbook,
+    grand_total_expr: str | float,
+    builtup_sqm: float,
+) -> dict[str, Any]:
+    """Tab 11: Bank Loan Abstract & Stage-Wise Payment Schedule."""
+    ws = wb.create_sheet("11. Bank Loan Estimate")
+    _banner(
+        ws,
+        6,
+        "BANK LOAN ESTIMATE ABSTRACT & STAGE-WISE PAYMENT SCHEDULE (L × B × D BASIS)",
+        "Formatted for Housing / Commercial Construction Loan Sanction & Stage-Wise Bank Disbursement.",
+    )
+    _write_table_headers(ws, 4, [
+        ("Stage", 8), ("Construction Milestone / Disbursement Stage", 46),
+        ("Stage %", 10), ("Stage Amount (₹)", 16), ("Cumulative (₹)", 16), ("Verification Required", 22),
+    ])
+
+    stages = [
+        ("1", "Advance & Foundation / Plinth Beam Completion (incl. Excavation, PCC, Footings, Backfill)", 0.20, "Engineer Plinth Certificate"),
+        ("2", "Superstructure Masonry up to Lintel / Roof Beam Level (Columns, Walls, Door/Window Frames)", 0.20, "Lintel Stage Inspection"),
+        ("3", "Roof Slab Casting & Staircase Completion (RCC M25, Formwork, Fe-500D Steel)", 0.25, "Slab Casting Photo + Bill"),
+        ("4", "Internal/External Plastering, Flooring Tiles, Granite, Electrical & Plumbing Rough-in", 0.25, "Finishing Stage Audit"),
+        ("5", "Painting, Doors/Windows Shutters, CP Fittings, Additional Works & Handover", 0.10, "Completion Certificate"),
+    ]
+    base_val = grand_total_expr
+    for idx, (st_no, desc, pct, ver) in enumerate(stages):
+        r = 5 + idx
+        ws.row_dimensions[r].height = 26
+        ws.cell(r, 1, st_no).alignment = ALIGN_C
+        ws.cell(r, 2, desc).alignment = ALIGN_L
+        ws.cell(r, 3, pct).alignment = ALIGN_C
+        ws.cell(r, 3).number_format = "0.0%"
+        base_ref = base_val if isinstance(base_val, str) else str(base_val)
+        ws.cell(r, 4, f"=ROUND({base_ref}*C{r}, 2)").alignment = ALIGN_R
+        ws.cell(r, 4).number_format = "₹#,##0.00"
+        ws.cell(r, 5, f"=SUM($D$5:D{r})").alignment = ALIGN_R
+        ws.cell(r, 5).number_format = "₹#,##0.00"
+        ws.cell(r, 6, ver).alignment = ALIGN_L
+        for ci in range(1, 7):
+            c = ws.cell(r, ci)
+            c.border = BORDER_GRID
+            c.fill = FILL_INPUT if ci == 3 else FILL_CALC
+            c.font = FONT_INPUT if ci == 3 else (FONT_BOLD if ci in (4, 5) else FONT_DATA)
+
+    tot_r = 10
+    ws.row_dimensions[tot_r].height = 25
+    ws.merge_cells(start_row=tot_r, start_column=1, end_row=tot_r, end_column=2)
+    ws.cell(tot_r, 1, f"TOTAL SANCTIONED ESTIMATE ({builtup_sqm:.1f} Sq.m / {builtup_sqm*10.7639:.0f} Sq.ft)").alignment = ALIGN_R
+    ws.cell(tot_r, 3, "=SUM(C5:C9)").alignment = ALIGN_C
+    ws.cell(tot_r, 3).number_format = "0.0%"
+    ws.cell(tot_r, 4, "=SUM(D5:D9)").alignment = ALIGN_R
+    ws.cell(tot_r, 4).number_format = "₹#,##0.00"
+    ws.cell(tot_r, 5, "=E9").alignment = ALIGN_R
+    ws.cell(tot_r, 5).number_format = "₹#,##0.00"
+    for ci in range(1, 7):
+        ws.cell(tot_r, ci).fill = FILL_GREEN if ci == 4 else FILL_TOTAL
+        ws.cell(tot_r, ci).font = FONT_BOLD
+        ws.cell(tot_r, ci).border = BORDER_TOT
 
     ws.freeze_panes = "A5"
     _configure_print(ws, landscape=True)
@@ -523,24 +709,21 @@ def build_material_mix_yield_sheet(
 def build_commercial_summary_sheet(
     wb: Workbook,
     trade_refs: list[tuple[str, str, str, int]],
+    mat_ref: dict[str, Any],
     builtup_area_sqm: float,
     params: dict[str, Any],
-) -> None:
-    """Tab 1: Commercial Summary & Abstract of Cost."""
+) -> dict[str, Any]:
+    """Tab 1: Commercial Summary & Executive Abstract (linked live to Tabs 3–10)."""
     ws = wb.create_sheet("1. Commercial Summary", 0)
     _banner(
         ws,
         6,
-        "MODULAR BUILDING BOQ — COMMERCIAL SUMMARY & ABSTRACT OF COST (IS 1200 / CPWD DSR)",
-        "Every building part is separated into its own tab (Tabs 2–9). All totals update live automatically.",
+        "MODULAR BUILDING BOQ — EXECUTIVE COMMERCIAL SUMMARY (IS 1200 / CPWD DSR)",
+        "Complete 12-Tab System: Separate Building Parts + 22-Item Material Takeoff + Client Quotation + Bank Loan Estimate.",
     )
     _write_table_headers(ws, 4, [
-        ("S.No", 7),
-        ("Building Part / Trade Module", 44),
-        ("Source Tab", 24),
-        ("Amount (₹)", 16),
-        ("% Share", 11),
-        ("Remarks", 22),
+        ("S.No", 7), ("Building Part / Trade Module", 44), ("Source Tab", 26),
+        ("Amount (₹)", 16), ("% Share", 11), ("Remarks", 22),
     ])
 
     first_r = 5
@@ -563,10 +746,9 @@ def build_commercial_summary_sheet(
             ws.cell(r, ci).font = FONT_BOLD if ci == 4 else FONT_DATA
             ws.cell(r, ci).border = BORDER_GRID
 
-    # Direct Cost Sub-Total
     ws.row_dimensions[sub_r].height = 24
     ws.merge_cells(start_row=sub_r, start_column=1, end_row=sub_r, end_column=3)
-    ws.cell(sub_r, 1, "DIRECT CONSTRUCTION COST SUB-TOTAL").alignment = ALIGN_R
+    ws.cell(sub_r, 1, "DIRECT CONSTRUCTION COST SUB-TOTAL (ALL PARTS)").alignment = ALIGN_R
     ws.cell(sub_r, 4, f"=SUM(D{first_r}:D{last_r})").alignment = ALIGN_R
     ws.cell(sub_r, 4).number_format = "₹#,##0.00"
     ws.cell(sub_r, 5, f"=SUM(E{first_r}:E{last_r})").alignment = ALIGN_R
@@ -576,21 +758,15 @@ def build_commercial_summary_sheet(
         ws.cell(sub_r, ci).font = FONT_BOLD
         ws.cell(sub_r, ci).border = BORDER_TOT
 
-    # Contingency, OHP, Pre-GST, GST, Grand Total
     cont_pct = float(params.get("contingency_pct", 0.05))
     ohp_pct = float(params.get("ohp_pct", 0.10))
     gst_pct = float(params.get("gst_pct", 0.18))
 
-    cont_r = sub_r + 1
-    ohp_r = sub_r + 2
-    pregst_r = sub_r + 3
-    gst_r = sub_r + 4
-    grand_r = sub_r + 5
-
+    cont_r, ohp_r, pregst_r, gst_r, grand_r = sub_r + 1, sub_r + 2, sub_r + 3, sub_r + 4, sub_r + 5
     commercial_rows = [
-        (cont_r, "A", "Add: Contingencies & Unforeseen Items (%)", f"=ROUND(D{sub_r}*E{cont_r}, 2)", cont_pct, "Editable %", True),
+        (cont_r, "A", "Add: Contingencies & Escalation (%)", f"=ROUND(D{sub_r}*E{cont_r}, 2)", cont_pct, "Editable %", True),
         (ohp_r,  "B", "Add: Contractor Overheads & Profit (%)", f"=ROUND(D{sub_r}*E{ohp_r}, 2)", ohp_pct, "Editable %", True),
-        (pregst_r, "", "SUB-TOTAL BEFORE GST", f"=ROUND(D{sub_r}+D{cont_r}+D{ohp_r}, 2)", "", "Taxable Value", False),
+        (pregst_r, "", "SUB-TOTAL BEFORE GST (CLIENT QUOTATION BASIS)", f"=ROUND(D{sub_r}+D{cont_r}+D{ohp_r}, 2)", "", "Matches Tab 2", False),
         (gst_r,  "C", "Add: Goods & Services Tax — GST (%)", f"=ROUND(D{pregst_r}*E{gst_r}, 2)", gst_pct, "Works Contract GST", True),
     ]
     for rr, code, lbl, fml, pct, rem, is_inp in commercial_rows:
@@ -615,13 +791,13 @@ def build_commercial_summary_sheet(
     ws.cell(grand_r, 4, f"=ROUND(D{pregst_r}+D{gst_r}, 2)").alignment = ALIGN_R
     ws.cell(grand_r, 4).number_format = "₹#,##0.00"
     ws.cell(grand_r, 5, "INR").alignment = ALIGN_C
-    ws.cell(grand_r, 6, "All-Inclusive Estimate").alignment = ALIGN_L
+    ws.cell(grand_r, 6, "Turnkey Estimate").alignment = ALIGN_L
     for ci in range(1, 7):
         ws.cell(grand_r, ci).fill = FILL_GREEN
         ws.cell(grand_r, ci).font = FONT_BOLD
         ws.cell(grand_r, ci).border = BORDER_TOT
 
-    # Unit Cost KPIs (per Sqm & per Sqft)
+    # Materials Supply Memo & Cost per Sq.ft KPI
     kpi_r = grand_r + 2
     ws.row_dimensions[kpi_r].height = 22
     ws.cell(kpi_r, 1, "KPI").alignment = ALIGN_C
@@ -638,17 +814,32 @@ def build_commercial_summary_sheet(
         ws.cell(kpi_r, ci).font = FONT_INPUT if ci == 3 else FONT_BOLD
         ws.cell(kpi_r, ci).border = BORDER_GRID
 
+    mat_memo_r = kpi_r + 1
+    ws.row_dimensions[mat_memo_r].height = 22
+    ws.cell(mat_memo_r, 1, "MAT").alignment = ALIGN_C
+    ws.merge_cells(start_row=mat_memo_r, start_column=2, end_row=mat_memo_r, end_column=3)
+    ws.cell(mat_memo_r, 2, "Material Procurement Cost Only (22 Supply Items — Tab 3)").alignment = ALIGN_L
+    ws.cell(mat_memo_r, 4, f"='{mat_ref['sheet_name']}'!{mat_ref['amount_col']}{mat_ref['total_row']}").alignment = ALIGN_R
+    ws.cell(mat_memo_r, 4).number_format = "₹#,##0.00"
+    ws.cell(mat_memo_r, 5, f"=IF($D${sub_r}>0, D{mat_memo_r}/$D${sub_r}, 0)").alignment = ALIGN_R
+    ws.cell(mat_memo_r, 5).number_format = "0.0%"
+    ws.cell(mat_memo_r, 6, "Supply-Only Share").alignment = ALIGN_L
+    for ci in range(1, 7):
+        ws.cell(mat_memo_r, ci).fill = FILL_SEC
+        ws.cell(mat_memo_r, ci).font = FONT_BOLD if ci == 4 else FONT_DATA
+        ws.cell(mat_memo_r, ci).border = BORDER_GRID
+
     _configure_print(ws, landscape=True)
+    return {"grand_total_cell": f"'1. Commercial Summary'!D{grand_r}"}
 
 
 # ---------------------------------------------------------------------------
-# Master Assembly & Standalone Trade Exports
+# Dataset Derivation (100% Aligned with Quick Building Estimator PRO Items)
 # ---------------------------------------------------------------------------
 def _derive_trade_datasets(
     raw_rows: list[dict[str, Any]],
     params: dict[str, Any],
 ) -> dict[str, Any]:
-    """Convert raw AutoCAD polyline takeoff rows into structured rows for Tabs 2–7."""
     story_ht = float(params.get("story_height_m", 3.30))
     slab_thk = float(params.get("slab_thickness_m", 0.125))
     steel_rate = float(params.get("steel_rate_inr", 82.0))
@@ -659,6 +850,7 @@ def _derive_trade_datasets(
     pbeams = [r for r in raw_rows if r["part"] == "PLINTH_BEAM"]
     beams = [r for r in raw_rows if r["part"] == "BEAM"]
     slabs = [r for r in raw_rows if r["part"] == "SLAB"]
+    stairs = [r for r in raw_rows if r["part"] == "STAIRCASE"]
     walls = [r for r in raw_rows if r["part"] in ("WALL", "MASONRY")]
     rooms = [r for r in raw_rows if r["part"] == "ROOM"]
 
@@ -670,69 +862,116 @@ def _derive_trade_datasets(
     col_shut = sum(r["nos"] * r["perim_m"] * (r["ht_m"] or story_ht) for r in cols) or 49.50
 
     slab_area = sum(r["nos"] * r["area_m2"] for r in slabs) or 112.00
+    builtup_sqft = round(slab_area * 10.7639, 1)
     slab_vol = round(slab_area * slab_thk, 2)
     beam_vol = round(sum(r["nos"] * r["area_m2"] * (r["ht_m"] or 0.45) for r in beams), 2) or round(slab_area * 0.065, 2)
     plinth_beam_vol = round(sum(r["nos"] * r["area_m2"] * (r["ht_m"] or 0.38) for r in pbeams), 2) or round(slab_area * 0.055, 2)
-    stair_vol = 2.65
+    stair_vol = round(sum(r["nos"] * r["area_m2"] * (r["ht_m"] or 0.175) for r in stairs), 2) or 2.65
     total_rcc_vol = round(ftg_vol + col_vol + plinth_beam_vol + beam_vol + slab_vol + stair_vol, 2)
     total_steel_kg = round(total_rcc_vol * 120.0, 2)
+    total_shut_sqm = round(ftg_shut + col_shut + slab_area * 1.35, 2)
 
-    room_area = sum(r["nos"] * r["area_m2"] for r in rooms) or 80.40
     room_perim = sum(r["nos"] * r["perim_m"] for r in rooms) or 84.80
     outer_wall_len = sum(r["nos"] * r["len_m"] for r in walls if r["wid_m"] >= 0.18)
     part_wall_len = sum(r["nos"] * r["len_m"] for r in walls if r["wid_m"] < 0.18)
     outer_perim = round(outer_wall_len, 2) if outer_wall_len > 0 else max(sum(r["perim_m"] for r in slabs), 44.0)
     part_len = round(part_wall_len, 2) if part_wall_len > 0 else round(room_perim * 0.45, 2)
 
+    pcc_cum = round(ftg_area * 1.10 * 0.10, 2)
+    gravel_cum = round(slab_area * 0.45, 2)
+    open_area_est = 25.04  # MD1 + 3 BD1 + 2 D2 + 4 W1 + 2 W2 + 1 W3 + 2 V1
+    mas_cum = round(outer_perim * 0.23 * story_ht + part_len * 0.115 * story_ht - open_area_est * 0.23, 2)
+    int_pls_sqm = round(room_perim * story_ht * 0.85, 2)
+    ext_pls_sqm = round(outer_perim * story_ht * 0.90, 2)
+    ceil_pls_sqm = round(slab_area * 0.92, 2)
+    pls_sqm = round(int_pls_sqm + ext_pls_sqm + ceil_pls_sqm, 2)
+
+    # Tuple: (Code, TradeFilter, Description, Unit, Nos, L, B, D, Rate, ScopeBucket)
     fdn_rows = [
-        ("FD-01", "Earthwork in excavation in foundation trenches & footing pits up to 2.25 m depth", "Cum", 1, round(ftg_area * 1.15, 2), 1.0, 2.00, 320.0, "Includes working space"),
-        ("FD-02", "River / M-sand filling & consolidation (150 mm thick) under all footings", "Cum", 1, round(ftg_area * 1.10, 2), 1.0, 0.15, 1650.0, "150 mm sand cushion"),
-        ("FD-03", "Plain Cement Concrete (PCC 1:4:8, 100 mm thick) blinding under footings", "Cum", 1, round(ftg_area * 1.10, 2), 1.0, 0.10, 5400.0, "IS 456 levelling bed"),
-        ("FD-04", "RCC M25 in Isolated & Combined Footings (from AutoCAD Footing Polylines)", "Cum", 1, round(ftg_vol, 2), 1.0, 1.0, conc_rate, "Auto-summed from Tab 9"),
-        ("FD-05", "Centering & shuttering for footing sides including strutting & propping", "Sqm", 1, round(ftg_shut, 2), 1.0, 1.0, 520.0, "Perimeter × Df"),
-        ("FD-06", "Backfilling around foundations with excavated earth & watering/compaction", "Cum", 1, round(ftg_area * 1.15 * 1.25, 2), 1.0, 1.0, 240.0, "Net compacted fill"),
+        ("FD-01", "Civil Labour", "Earth excavation for foundations & trenches (L×B×2.0m depth)", "Cum", 1, round(ftg_area * 1.15, 2), 1.0, 2.00, 320.0, "Labour & Works"),
+        ("FD-02", "Civil Labour", "River / M-sand cushion filling (150 mm) under all footings", "Cum", 1, round(ftg_area * 1.10, 2), 1.0, 0.15, 1650.0, "Labour & Works"),
+        ("FD-03", "Civil Labour", "Plain Cement Concrete PCC 1:4:8 (100 mm thick) levelling bed", "Cum", 1, round(ftg_area * 1.10, 2), 1.0, 0.10, 5400.0, "Labour & Works"),
+        ("FD-04", "Civil Labour", "RCC M25 in Isolated & Combined Footings (from AutoCAD Polylines)", "Cum", 1, round(ftg_vol, 2), 1.0, 1.0, conc_rate, "Labour & Works"),
+        ("FD-05", "Civil Labour", "Centering & shuttering for footing sides (Perimeter × Df)", "Sqm", 1, round(ftg_shut, 2), 1.0, 1.0, 520.0, "Labour & Works"),
+        ("FD-06", "Civil Labour", "Backfilling around foundations & basement gravel/earth filling (0.45m)", "Cum", 1, gravel_cum, 1.0, 1.0, 620.0, "Labour & Works"),
+        ("FD-07", "Civil Labour", "Pre-construction Anti-Termite soil & plinth chemical treatment (IS 6313)", "Sqm", 1, round(slab_area, 2), 1.0, 1.0, 135.0, "Labour & Works"),
+        ("FD-08", "Civil Labour", "Damp Proof Course (DPC 40 mm CM 1:2 + waterproofing) & Plinth Protection", "Sqm", 1, round(outer_perim * 0.60, 2), 1.0, 1.0, 580.0, "Labour & Works"),
     ]
 
     rcc_rows = [
-        ("RC-01", "RCC M25 in Columns (Footing Neck + Superstructure) from AutoCAD Column Polylines", "Cum", 1, round(col_vol, 2), 1.0, 1.0, conc_rate + 600, "Auto-summed from Tab 9"),
-        ("RC-02", "RCC M25 in Plinth Beams & Tie Beams (230×380 mm typical)", "Cum", 1, plinth_beam_vol, 1.0, 1.0, conc_rate + 400, "Sub-structure tie grid"),
-        ("RC-03", "RCC M25 in Roof / Floor Beams (230×450 mm typical)", "Cum", 1, beam_vol, 1.0, 1.0, conc_rate + 600, "Superstructure beams"),
-        ("RC-04", "RCC M25 in Roof Slab & Staircase Waist Slab (from AutoCAD Slab Polylines)", "Cum", 1, round(slab_vol + stair_vol, 2), 1.0, 1.0, conc_rate + 500, f"Slab thk = {slab_thk*1000:.0f} mm"),
-        ("RC-05", "Centering, shuttering & staging for Columns, Beams, Slab & Staircase", "Sqm", 1, round(col_shut + slab_area * 1.35, 2), 1.0, 1.0, 650.0, "Plywood shuttering"),
-        ("RC-06", "TMT Fe-500D Reinforcement Steel — cutting, bending & binding complete (~120 kg/m³)", "kg", 1, total_steel_kg, 1.0, 1.0, steel_rate, "Linked to Material Yield"),
+        ("RC-01", "Civil Labour", "RCC M25 in Columns (Fdn Neck + Superstructure) from AutoCAD Polylines", "Cum", 1, round(col_vol, 2), 1.0, 1.0, conc_rate + 600, "Labour & Works"),
+        ("RC-02", "Civil Labour", "RCC M25 in Plinth Beams & Tie Beams (230×380 mm)", "Cum", 1, plinth_beam_vol, 1.0, 1.0, conc_rate + 400, "Labour & Works"),
+        ("RC-03", "Civil Labour", "RCC M25 in Roof / Floor Beams (230×450 mm)", "Cum", 1, beam_vol, 1.0, 1.0, conc_rate + 600, "Labour & Works"),
+        ("RC-04", "Civil Labour", "RCC M25 in Roof Slab & Staircase Waist Slab + Steps", "Cum", 1, round(slab_vol + stair_vol, 2), 1.0, 1.0, conc_rate + 500, "Labour & Works"),
+        ("RC-05", "Civil Labour", "Centering, shuttering & staging for Columns, Beams, Slab & Staircase", "Sqm", 1, round(col_shut + slab_area * 1.35, 2), 1.0, 1.0, 650.0, "Labour & Works"),
+        ("RC-06", "Civil Labour", "TMT Fe-500D Reinforcement Steel — supply, cutting, bending & binding (~120 kg/m³)", "kg", 1, total_steel_kg, 1.0, 1.0, steel_rate, "Labour & Works"),
+        ("RC-07", "Civil Labour", "Rebar Binding Wire (GI 18-G), Concrete Cover Blocks & Shuttering Wire Nails", "Lot", 1, 1.0, 1.0, 1.0, 14500.0, "Labour & Works"),
     ]
 
     mas_rows = [
-        ("MS-01", "230 mm Outer Brick / AAC Block Masonry in CM 1:6 (Perimeter × Story Ht)", "Cum", 1, round(outer_perim, 2), 0.23, story_ht, 6900.0, "External walls"),
-        ("MS-02", "115 mm Internal Partition Masonry in CM 1:4", "Cum", 1, part_len, 0.115, story_ht, 7200.0, "Internal partitions"),
-        ("MS-03", "Less: Deduction for Doors, Windows & Ventilators (Auto-linked from Tab 5)", "Cum", -1, "='5. Doors & Windows'!F11", 0.23, 1.0, 6900.0, "Live link to Tab 5"),
-        ("PL-01", "12 mm Internal Cement Plastering in CM 1:6 on walls (net of openings)", "Sqm", 1, round(room_perim * story_ht * 0.85, 2), 1.0, 1.0, 310.0, "Smooth trowel finish"),
-        ("PL-02", "18 mm External Two-Coat Waterproof Plastering in CM 1:4", "Sqm", 1, round(outer_perim * story_ht * 0.90, 2), 1.0, 1.0, 390.0, "Weatherproof coat"),
-        ("PL-03", "10 mm Ceiling Plastering in CM 1:4 (from AutoCAD Slab/Room Area)", "Sqm", 1, round(slab_area * 0.92, 2), 1.0, 1.0, 330.0, "Soffit of slab"),
+        ("MS-01", "Civil Labour", "230 mm Outer Brick / Solid Block Masonry in CM 1:6 (Perimeter × Story Ht)", "Cum", 1, outer_perim, 0.23, story_ht, 6900.0, "Labour & Works"),
+        ("MS-02", "Civil Labour", "115 mm Internal Partition Masonry in CM 1:4", "Cum", 1, part_len, 0.115, story_ht, 7200.0, "Labour & Works"),
+        ("MS-03", "Civil Labour", "Less: Deduction for Doors, Windows & Ventilators (Auto-linked from Tab 7)", "Cum", -1, "='7. Doors & Windows'!F12", 0.23, 1.0, 6900.0, "Labour & Works"),
+        ("PL-01", "Civil Labour", "12 mm Internal Cement Plastering in CM 1:6 on walls (net of openings)", "Sqm", 1, int_pls_sqm, 1.0, 1.0, 310.0, "Labour & Works"),
+        ("PL-02", "Civil Labour", "18 mm External Two-Coat Waterproof Plastering in CM 1:4", "Sqm", 1, ext_pls_sqm, 1.0, 1.0, 390.0, "Labour & Works"),
+        ("PL-03", "Civil Labour", "10 mm Ceiling Plastering in CM 1:4 (Soffit of slab)", "Sqm", 1, ceil_pls_sqm, 1.0, 1.0, 330.0, "Labour & Works"),
+        ("WC-01", "Civil Labour", "Terrace Weathering Course (75 mm brick jelly lime + cool pressed clay tiles & curing)", "Sqm", 1, round(slab_area, 2), 1.0, 1.0, 920.0, "Labour & Works"),
     ]
 
     flr_rows = []
-    for i, rm in enumerate(rooms[:8], start=1):
+    for i, rm in enumerate(rooms[:6], start=1):
+        is_bath = "bath" in rm["mark"].lower() or "toilet" in rm["mark"].lower()
+        tile_desc = "Anti-Skid Ceramic Bathroom Floor Tiles" if is_bath else "Vitrified 600×600 Floor Tiles"
         flr_rows.append((
-            f"FL-{i:02d}",
-            f"Flooring — {rm['mark']} ({rm['len_m']}×{rm['wid_m']} m) Vitrified / Anti-Skid Tiles over CM 1:4 bed",
-            "Sqm", rm["nos"], rm["area_m2"], 1.0, 1.0, 1450.0, "AutoCAD Room Polyline",
+            f"FL-{i:02d}", "Tiles & Granite",
+            f"Flooring — {rm['mark']} ({rm['len_m']}×{rm['wid_m']} m) {tile_desc} over CM 1:4 bed",
+            "Sqm", rm["nos"], rm["area_m2"], 1.0, 1.0, 1320.0 if is_bath else 1480.0, "Labour & Works",
         ))
     flr_rows.extend([
-        ("SK-01", "100 mm High Matching Tile / Granite Skirting along room perimeters", "Rmt", 1, round(room_perim * 0.88, 2), 1.0, 1.0, 240.0, "Net of door widths"),
-        ("DD-01", "Glazed Ceramic Wall Dado Tiles (up to 2.1 m ht) in Bathrooms & Kitchen", "Sqm", 1, 46.00, 1.0, 1.0, 1380.0, "Wet areas"),
-        ("PT-01", "Interior Painting — 2 coats Wall Putty + 1 coat Primer + 2 coats Acrylic Emulsion", "Sqm", 1, round(room_perim * story_ht * 0.85 + slab_area * 0.92, 2), 1.0, 1.0, 195.0, "Walls + Ceilings"),
-        ("PT-02", "Exterior Weather-Shield Emulsion Paint (1 coat Primer + 2 coats Apex/WeatherCoat)", "Sqm", 1, round(outer_perim * story_ht * 0.90, 2), 1.0, 1.0, 215.0, "External facade"),
+        ("FL-07", "Tiles & Granite", "Parking Tiles / Heavy-Duty Interlocking Pavers (car porch & setback)", "Sqm", 1, 28.00, 1.0, 1.0, 980.0, "Labour & Works"),
+        ("FL-08", "Tiles & Granite", "Kitchen Dado Glazed Ceramic Wall Tiles (0.6 m above counter) & Bathroom Wall Tiles (2.1 m ht)", "Sqm", 1, 48.00, 1.0, 1.0, 1380.0, "Labour & Works"),
+        ("FL-09", "Tiles & Granite", "100 mm Matching Tile / Granite Skirting along room perimeters", "Rmt", 1, round(room_perim * 0.88, 2), 1.0, 1.0, 240.0, "Labour & Works"),
+        ("GR-01", "Tiles & Granite", "Kitchen Counter Black Galaxy Granite Slab (20 mm bullnosed) with vertical support", "Sqm", 1, 4.20, 1.0, 1.0, 4200.0, "Labour & Works"),
+        ("GR-02", "Tiles & Granite", "Staircase Granite Treads (20 mm double-nosed) & Risers with anti-skid grooves", "Sqm", 1, 16.50, 1.0, 1.0, 3400.0, "Labour & Works"),
+        ("GR-03", "Carpentry / Doors", "Staircase SS 304 / Matte-Black MS Handrail (1.05 m ht) fixed on steps & landings", "Rmt", 1, 11.50, 1.0, 1.0, 2400.0, "Labour & Works"),
+        ("PT-01", "Painting Labour", "Internal Painting — 2 coats Wall Putty + 1 coat Primer + 2 coats Acrylic Emulsion", "Sqm", 1, round(int_pls_sqm + ceil_pls_sqm, 2), 1.0, 1.0, 195.0, "Labour & Works"),
+        ("PT-02", "Painting Labour", "External Painting — 1 coat Weather-Shield Primer + 2 coats Weatherproof Emulsion", "Sqm", 1, ext_pls_sqm, 1.0, 1.0, 215.0, "Labour & Works"),
+        ("PT-03", "Painting Labour", "Synthetic Enamel Painting on MS Grills, Gates & Frames (1 coat Red Oxide + 2 coats Enamel)", "Sqm", 1, 24.00, 1.0, 1.0, 185.0, "Labour & Works"),
     ])
 
     mep_rows = [
-        ("EL-01", "Concealed PVC Conduit Wiring — Light, Fan & 6A Socket Points (FRLS Copper)", "Pts", 48, 1.0, 1.0, 1.0, 1150.0, "IS 694 FRLS wires"),
-        ("EL-02", "16A Power Points (AC, Geyser, Kitchen Appliances) with modular switches", "Pts", 10, 1.0, 1.0, 1.0, 1850.0, "4 sq.mm copper"),
-        ("EL-03", "Main Distribution Board (8-Way TPN MCB/RCCB) & Copper Plate Earthing", "Lot", 1, 1.0, 1.0, 1.0, 24500.0, "Safety & protection"),
-        ("PL-01", "CPVC / UPVC Concealed Water Supply & SWR Drainage Piping (Bathrooms + Kitchen)", "Lot", 1, 1.0, 1.0, 1.0, 68000.0, "Pressure tested"),
-        ("PL-02", "Sanitaryware & CP Fittings (EWC, Wash Basin, Diverter, Mixers, Sink)", "Set", 2, 1.0, 1.0, 1.0, 32000.0, "2 Bathrooms + Kitchen"),
-        ("WT-01", "Overhead PVC Water Tank (2000 Ltr) & Underground RCC Sump (6000 Ltr) with Motor", "Lot", 1, 1.0, 1.0, 1.0, 95000.0, "Complete plumbing"),
+        ("EL-01", "Electrical Labour", "Concealed FRLS PVC Conduit Wiring — Light, Fan & 6A Modular Points", "Pts", 48, 1.0, 1.0, 1.0, 1150.0, "Labour & Works"),
+        ("EL-02", "Electrical Labour", "16A Power Points (AC, Geyser, Kitchen) + 8-Way TPN DB & Copper Plate Earthing", "Pts", 12, 1.0, 1.0, 1.0, 2850.0, "Labour & Works"),
+        ("PL-01", "Plumbing Labour", "Toilet Plumbing & Sanitaryware (CPVC/SWR Piping, EWC, Wash Basin, Concealed Diverter)", "Set", 2, 1.0, 1.0, 1.0, 44000.0, "Labour & Works"),
+        ("PL-02", "Plumbing Labour", "Bathroom Water Taps, Bib Cocks, Angle Valves, Health Faucets & Floor Traps", "Set", 2, 1.0, 1.0, 1.0, 9500.0, "Labour & Works"),
+        ("PL-03", "Plumbing Labour", "Kitchen Plumbing, SS 304 Sink (600×450 mm), Swan Neck Tap & RO/Drain Provision", "Job", 1, 1.0, 1.0, 1.0, 18500.0, "Labour & Works"),
+        ("LB-01", "Civil Labour", "Civil General Site Supervision, Curing & Bar-Bending Misc Labour Allowance (Sq.ft basis)", "Sqft", 1, builtup_sqft, 1.0, 1.0, 45.0, "Labour & Works"),
     ]
+
+    add_rows = [
+        ("AD-01", "Additional Works", "Underground RCC Water Sump (6,000 Ltr) with waterproofing, plaster & CI manhole cover", "Job", 1, 1.0, 1.0, 1.0, 92000.0, "Additional Works"),
+        ("AD-02", "Additional Works", "Septic Tank (10-User RCC / Masonry) with baffle walls, vent pipe & Soak Pit", "Job", 1, 1.0, 1.0, 1.0, 78000.0, "Additional Works"),
+        ("AD-03", "Additional Works", "Overhead PVC Water Tank (2,000 Ltr, 3-Layer) incl. MS/RCC Stand & Plumbing Connections", "Job", 1, 1.0, 1.0, 1.0, 34000.0, "Additional Works"),
+        ("AD-04", "Additional Works", "Compound Wall (230 mm masonry, 1.8 m ht, foundation, plinth beam & 2-side plaster)", "Rmt", 1, 36.0, 1.0, 1.0, 4800.0, "Additional Works"),
+        ("AD-05", "Additional Works", "Main MS Compound Gate (3.6 m wide × 1.8 m ht) with pillars, rollers & enamel painting", "Job", 1, 1.0, 1.0, 1.0, 58000.0, "Additional Works"),
+        ("AD-06", "Additional Works", "Balcony SS 304 / Toughened Glass Railing (1.05 m high)", "Rmt", 1, 6.50, 1.0, 1.0, 3800.0, "Additional Works"),
+        ("AD-07", "Additional Works", "Car Parking Entry Ramp (RCC M20 with anti-skid grooves)", "Sqm", 1, 9.00, 1.0, 1.0, 1650.0, "Additional Works"),
+        ("AD-08", "Additional Works", "Rainwater Harvesting Pit (1.2 m dia × 2.5 m deep, rings, gravel/charcoal filter & recharge pipe)", "Job", 1, 1.0, 1.0, 1.0, 26000.0, "Additional Works"),
+    ]
+
+    metrics = {
+        "rcc_cum": total_rcc_vol,
+        "pcc_cum": pcc_cum,
+        "mas_cum": mas_cum,
+        "pls_sqm": pls_sqm,
+        "int_paint_sqm": round(int_pls_sqm + ceil_pls_sqm, 2),
+        "ext_paint_sqm": ext_pls_sqm,
+        "enamel_sqm": 24.0,
+        "steel_kg": total_steel_kg,
+        "shuttering_sqm": total_shut_sqm,
+        "gravel_cum": gravel_cum,
+        "wood_cft": 22.90,  # MD1 (8.5) + 3*BD1 (14.4)
+    }
 
     return {
         "fdn_rows": fdn_rows,
@@ -740,7 +979,104 @@ def _derive_trade_datasets(
         "mas_rows": mas_rows,
         "flr_rows": flr_rows,
         "mep_rows": mep_rows,
+        "add_rows": add_rows,
+        "metrics": metrics,
         "builtup_area_sqm": slab_area,
+        "builtup_sqft": builtup_sqft,
+    }
+
+
+def _eval_rows_for_preview(rows_data: list[tuple], open_area: float = 25.04) -> list[dict[str, Any]]:
+    out = []
+    for code, trade, desc, unit, nos, lv, bv, dv, rate, scope in rows_data:
+        l_num = open_area if isinstance(lv, str) else float(lv)
+        qty = round(float(nos) * l_num * float(bv) * float(dv), 2)
+        amt = round(qty * float(rate), 2)
+        fml = f"{nos} × {l_num:.2f} × {bv} × {dv} = {qty:.2f} {unit}"
+        out.append({
+            "Code": code,
+            "Trade": trade,
+            "Scope": scope,
+            "Description": desc,
+            "Formula": fml,
+            "Qty": qty,
+            "Unit": unit,
+            "Rate (₹)": rate,
+            "Amount (₹)": amt,
+        })
+    return out
+
+
+def get_modular_boq_preview(
+    raw_rows: list[dict[str, Any]] | None = None,
+    params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return structured KPIs & itemized rows for Streamlit Tab 4 Dashboard & Scope/Trade Filters."""
+    p = params or {}
+    raw = raw_rows if raw_rows else default_autocad_sample_rows()
+    ds = _derive_trade_datasets(raw, p)
+    cont = float(p.get("contingency_pct", 0.05))
+    ohp = float(p.get("ohp_pct", 0.10))
+    gst = float(p.get("gst_pct", 0.18))
+
+    # Build temporary workbook to read exact Doors/Windows & Material totals
+    tmp_wb = Workbook()
+    dw_ref = build_doors_windows_sheet(tmp_wb)
+    mat_ref = build_material_takeoff_sheet(tmp_wb, ds["metrics"], ds["builtup_sqft"], float(p.get("steel_rate_inr", 82.0)))
+
+    items: list[dict[str, Any]] = []
+    for grp in (ds["fdn_rows"], ds["rcc_rows"], ds["mas_rows"], ds["flr_rows"], ds["mep_rows"], ds["add_rows"]):
+        items.extend(_eval_rows_for_preview(grp, dw_ref["tot_open_area"]))
+
+    # Append Doors & Windows items for filtering
+    items.append({
+        "Code": "DW-ALL",
+        "Trade": "Carpentry / Doors",
+        "Scope": "Doors & Windows",
+        "Description": f"Doors, Windows & Ventilators Complete Schedule (MD1, BD1, Bath, W1–W3, V1 | {dw_ref['tot_open_area']} m² | {dw_ref['tot_wood_cft']} CFT wood)",
+        "Formula": f"Opening Area = {dw_ref['tot_open_area']} m²; Wood = {dw_ref['tot_wood_cft']} CFT",
+        "Qty": 15.0,
+        "Unit": "Nos",
+        "Rate (₹)": round(dw_ref["tot_amt"] / 15.0, 2),
+        "Amount (₹)": dw_ref["tot_amt"],
+    })
+
+    # Append Supply Material rows for "Materials Only" scope filter
+    for idx, (mname, theo, wast, unit, rate) in enumerate(mat_ref["mats"], start=1):
+        qw = round(theo * (1.0 + wast), 2)
+        items.append({
+            "Code": f"MT-{idx:02d}",
+            "Trade": "Materials Supply",
+            "Scope": "Materials Only",
+            "Description": mname,
+            "Formula": f"Theoretical {theo} × (1 + {wast*100:.0f}% wastage) = {qw} {unit}",
+            "Qty": qw,
+            "Unit": unit,
+            "Rate (₹)": rate,
+            "Amount (₹)": round(qw * rate, 2),
+        })
+
+    labour_works_tot = sum(r["Amount (₹)"] for r in items if r["Scope"] == "Labour & Works")
+    dw_tot = dw_ref["tot_amt"]
+    add_tot = sum(r["Amount (₹)"] for r in items if r["Scope"] == "Additional Works")
+    mat_tot = mat_ref["tot_supply"]
+    direct_tot = round(labour_works_tot + dw_tot + add_tot, 2)
+    pregst = round(direct_tot * (1.0 + cont + ohp), 2)
+    grand = round(pregst * (1.0 + gst), 2)
+
+    return {
+        "items": items,
+        "kpis": {
+            "materials_supply": round(mat_tot, 2),
+            "labour_works": round(labour_works_tot, 2),
+            "doors_windows": round(dw_tot, 2),
+            "additional_works": round(add_tot, 2),
+            "direct_cost": direct_tot,
+            "pregst": pregst,
+            "grand_total": grand,
+            "rate_per_sqft": round(grand / max(ds["builtup_sqft"], 1.0), 2),
+            "builtup_sqft": ds["builtup_sqft"],
+        },
     }
 
 
@@ -754,61 +1090,118 @@ def compile_modular_boq_bytes(
     raw_rows: list[dict[str, Any]] | None = None,
     params: dict[str, Any] | None = None,
 ) -> dict[str, bytes]:
-    """Compile Master 9-Tab Modular BOQ + Standalone Individual Part Workbooks in memory."""
+    """Compile Master 12-Tab Modular BOQ + Standalone Individual Workbooks in memory (0 #REF!)."""
     p = params or {}
     raw = raw_rows if raw_rows else default_autocad_sample_rows()
     ds = _derive_trade_datasets(raw, p)
+    cont_pct = float(p.get("contingency_pct", 0.05))
+    ohp_pct = float(p.get("ohp_pct", 0.10))
+    steel_rate = float(p.get("steel_rate_inr", 82.0))
     out: dict[str, bytes] = {}
 
-    # 1. Master 9-Tab Workbook
+    # 1. Master 12-Tab Workbook
     wb = Workbook()
     d_ws = wb.active
-    f_ref = _build_standard_trade_sheet(wb, "2. Foundation & Earthwork", "MODULE 1: FOUNDATION & EARTHWORK BOQ", "Excavation, Sand Fill, PCC 1:4:8, Footing M25 Concrete, Shuttering & Backfill.", ds["fdn_rows"])
-    r_ref = _build_standard_trade_sheet(wb, "3. RCC Structure & Steel", "MODULE 2: RCC STRUCTURE & STEEL BOQ", "Columns, Plinth Beams, Floor Beams, Roof Slabs, Staircase, Shuttering & Fe-500D Steel.", ds["rcc_rows"])
-    m_ref = _build_standard_trade_sheet(wb, "4. Masonry & Plastering", "MODULE 3: MASONRY & PLASTERING BOQ", "Outer 230 mm & Partition 115 mm Masonry with Live Opening Deductions from Tab 5.", ds["mas_rows"])
-    dw_ref = build_doors_windows_sheet(wb, p)
-    fl_ref = _build_standard_trade_sheet(wb, "6. Flooring, Tiles & Paint", "MODULE 5: FLOORING, TILES & PAINTING BOQ", "Room-by-Room AutoCAD Takeoff Schedule — Vitrified Tiles, Skirting, Dado & Paint.", ds["flr_rows"])
-    ep_ref = _build_standard_trade_sheet(wb, "7. Electrical & Plumbing", "MODULE 6: ELECTRICAL, PLUMBING & WATER TANK BOQ", "Concealed Wiring, DB, Earthing, CPVC/SWR Piping, Sanitaryware & Water Storage.", ds["mep_rows"])
-    build_material_mix_yield_sheet(wb, f_ref, r_ref, m_ref)
-    build_autocad_raw_sheet(wb, raw)
+
+    mat_ref = build_material_takeoff_sheet(wb, ds["metrics"], ds["builtup_sqft"], steel_rate)
+    f_ref = _build_trade_sheet(wb, "4. Foundation & Basement", "MODULE 1: FOUNDATION, EARTHWORK & BASEMENT BOQ", "Excavation, Sand Fill, PCC 1:4:8, Footing RCC, Basement Gravel Fill, Anti-Termite & DPC.", ds["fdn_rows"])
+    r_ref = _build_trade_sheet(wb, "5. RCC Structure & Steel", "MODULE 2: RCC STRUCTURE, STAIRCASE & STEEL BOQ", "Columns, Plinth Beams, Floor Beams, Roof Slab, Staircase, Shuttering, TMT Steel, Binding Wire & Cover Blocks.", ds["rcc_rows"])
+    m_ref = _build_trade_sheet(wb, "6. Masonry & Plastering", "MODULE 3: MASONRY, PLASTERING & WEATHERING COURSE BOQ", "230/115 mm Masonry with Live Opening Deductions (Tab 7), Plastering & Terrace Weathering Course.", ds["mas_rows"])
+    dw_ref = build_doors_windows_sheet(wb)
+    fl_ref = _build_trade_sheet(wb, "8. Flooring, Tiles & Paint", "MODULE 5: FLOORING, TILES, GRANITE & PAINTING BOQ", "Room Tiles, Parking Pavers, Dado, Skirting, Kitchen/Stair Granite, Handrail & Interior/Exterior/Enamel Paints.", ds["flr_rows"])
+    ep_ref = _build_trade_sheet(wb, "9. Electrical & Plumbing", "MODULE 6: ELECTRICAL, PLUMBING & GENERAL LABOUR BOQ", "Concealed Wiring, DB, Toilet Sanitaryware, Taps/Bib Cocks, Kitchen SS Sink & Civil Labour.", ds["mep_rows"])
+    ad_ref = _build_trade_sheet(wb, "10. Additional Works", "MODULE 7: ADDITIONAL EXTERNAL WORKS BOQ", "Underground Sump, Septic Tank, Overhead Tank, Compound Wall, Gate, Balcony Railing, Ramp & RWH Pit.", ds["add_rows"])
+
+    # Flat client BOQ rows
+    client_rows = []
+    for grp in (ds["fdn_rows"], ds["rcc_rows"], ds["mas_rows"], ds["flr_rows"], ds["mep_rows"], ds["add_rows"]):
+        for row in _eval_rows_for_preview(grp, dw_ref["tot_open_area"]):
+            client_rows.append((row["Code"], row["Trade"], row["Description"], row["Unit"], row["Qty"], row["Rate (₹)"]))
+    client_rows.append(("DW-01", "Carpentry / Doors", "Complete Doors, Windows & Ventilators Joinery Package (MD1, BD1, Bath, W1–W3, V1)", "Lot", 1.0, dw_ref["tot_amt"]))
+    build_client_boq_sheet(wb, client_rows, cont_pct, ohp_pct)
+
     trade_refs = [
-        ("Foundation & Earthwork", f_ref["sheet_name"], "J", f_ref["total_row"]),
-        ("RCC Structure & Steel", r_ref["sheet_name"], "J", r_ref["total_row"]),
-        ("Masonry & Plastering", m_ref["sheet_name"], "J", m_ref["total_row"]),
-        ("Doors, Windows & Openings", dw_ref["sheet_name"], dw_ref["amount_col"], dw_ref["total_row"]),
-        ("Flooring, Tiles & Painting", fl_ref["sheet_name"], "J", fl_ref["total_row"]),
-        ("Electrical, Plumbing & Misc", ep_ref["sheet_name"], "J", ep_ref["total_row"]),
+        ("Foundation, Earthwork & Basement", f_ref["sheet_name"], "K", f_ref["total_row"]),
+        ("RCC Structure, Staircase & Steel", r_ref["sheet_name"], "K", r_ref["total_row"]),
+        ("Masonry, Plastering & Weathering Course", m_ref["sheet_name"], "K", m_ref["total_row"]),
+        ("Doors, Windows & Joinery Schedule", dw_ref["sheet_name"], dw_ref["amount_col"], dw_ref["total_row"]),
+        ("Flooring, Tiles, Granite & Painting", fl_ref["sheet_name"], "K", fl_ref["total_row"]),
+        ("Electrical, Plumbing & General Labour", ep_ref["sheet_name"], "K", ep_ref["total_row"]),
+        ("Additional Works (Sump, Septic, Wall, Gate, RWH)", ad_ref["sheet_name"], "K", ad_ref["total_row"]),
     ]
-    build_commercial_summary_sheet(wb, trade_refs, ds["builtup_area_sqm"], p)
+    sum_ref = build_commercial_summary_sheet(wb, trade_refs, mat_ref, ds["builtup_area_sqm"], p)
+    build_bank_loan_estimate_sheet(wb, sum_ref["grand_total_cell"], ds["builtup_area_sqm"])
+    build_autocad_raw_sheet(wb, raw)
     wb.remove(d_ws)
+
+    # Enforce logical tab ordering 1..12
+    order = [
+        "1. Commercial Summary",
+        "2. Client BOQ & Quotation",
+        "3. Material Takeoff (Supply)",
+        "4. Foundation & Basement",
+        "5. RCC Structure & Steel",
+        "6. Masonry & Plastering",
+        "7. Doors & Windows",
+        "8. Flooring, Tiles & Paint",
+        "9. Electrical & Plumbing",
+        "10. Additional Works",
+        "11. Bank Loan Estimate",
+        "12. AutoCAD Raw Takeoff",
+    ]
+    wb._sheets = [wb[n] for n in order]
+    wb.active = 0
     out[MASTER_FILENAME] = _wb_bytes(wb)
 
-    # 2. Standalone Part Exports (zero broken links)
+    # 2. Standalone Exports (zero broken links!)
+    # Materials Takeoff Only
+    wb_mat = Workbook()
+    dw = wb_mat.active
+    build_material_takeoff_sheet(wb_mat, ds["metrics"], ds["builtup_sqft"], steel_rate)
+    wb_mat.remove(dw)
+    out["BOQ_Materials_Takeoff_Only.xlsx"] = _wb_bytes(wb_mat)
+
+    # Client Quotation BOQ Only
+    wb_cli = Workbook()
+    dw = wb_cli.active
+    build_client_boq_sheet(wb_cli, client_rows, cont_pct, ohp_pct)
+    wb_cli.remove(dw)
+    out["BOQ_Client_Quotation.xlsx"] = _wb_bytes(wb_cli)
+
+    # Bank Loan Estimate Only
+    prev = get_modular_boq_preview(raw, p)
+    wb_bnk = Workbook()
+    dw = wb_bnk.active
+    build_bank_loan_estimate_sheet(wb_bnk, prev["kpis"]["grand_total"], ds["builtup_area_sqm"])
+    wb_bnk.remove(dw)
+    out["BOQ_Bank_Loan_Estimate.xlsx"] = _wb_bytes(wb_bnk)
+
+    # Standalone Trade Workbooks
     standalone_specs = [
-        ("BOQ_Foundation_Earthwork.xlsx", "2. Foundation & Earthwork", "MODULE 1: FOUNDATION & EARTHWORK BOQ", ds["fdn_rows"]),
-        ("BOQ_RCC_Structure.xlsx", "3. RCC Structure & Steel", "MODULE 2: RCC STRUCTURE & STEEL BOQ", ds["rcc_rows"]),
-        ("BOQ_Flooring_Paint.xlsx", "6. Flooring, Tiles & Paint", "MODULE 5: FLOORING, TILES & PAINTING BOQ", ds["flr_rows"]),
-        ("BOQ_Electrical_Plumbing.xlsx", "7. Electrical & Plumbing", "MODULE 6: ELECTRICAL & PLUMBING BOQ", ds["mep_rows"]),
+        ("BOQ_Foundation_Earthwork.xlsx", "4. Foundation & Basement", "MODULE 1: FOUNDATION & BASEMENT BOQ", ds["fdn_rows"]),
+        ("BOQ_RCC_Structure.xlsx", "5. RCC Structure & Steel", "MODULE 2: RCC STRUCTURE & STEEL BOQ", ds["rcc_rows"]),
+        ("BOQ_Flooring_Paint.xlsx", "8. Flooring, Tiles & Paint", "MODULE 5: FLOORING, TILES, GRANITE & PAINT BOQ", ds["flr_rows"]),
+        ("BOQ_Electrical_Plumbing.xlsx", "9. Electrical & Plumbing", "MODULE 6: ELECTRICAL & PLUMBING BOQ", ds["mep_rows"]),
+        ("BOQ_Additional_Works.xlsx", "10. Additional Works", "MODULE 7: ADDITIONAL EXTERNAL WORKS BOQ", ds["add_rows"]),
     ]
     for fname, sname, title, rdata in standalone_specs:
         wbs = Workbook()
         dw = wbs.active
-        _build_standard_trade_sheet(wbs, sname, title, "Standalone Trade Export — AutoBOQ 2D Modular System.", rdata)
+        _build_trade_sheet(wbs, sname, title, "Standalone Trade Export — AutoBOQ 2D Modular System.", rdata)
         wbs.remove(dw)
         out[fname] = _wb_bytes(wbs)
 
-    # Doors & Windows standalone
     wb_dw = Workbook()
     dw = wb_dw.active
-    build_doors_windows_sheet(wb_dw, p)
+    build_doors_windows_sheet(wb_dw)
     wb_dw.remove(dw)
     out["BOQ_Doors_Windows.xlsx"] = _wb_bytes(wb_dw)
 
-    # Masonry & Plaster standalone (includes Doors & Windows tab so opening deduction link never #REF!s)
+    # Masonry & Plaster standalone includes Tab 7 so opening deduction never #REF!s
     wb_mp = Workbook()
     dw = wb_mp.active
-    _build_standard_trade_sheet(wb_mp, "4. Masonry & Plastering", "MODULE 3: MASONRY & PLASTERING BOQ", "Includes Doors & Windows tab for live opening deduction.", ds["mas_rows"])
-    build_doors_windows_sheet(wb_mp, p)
+    _build_trade_sheet(wb_mp, "6. Masonry & Plastering", "MODULE 3: MASONRY, PLASTERING & WEATHERING COURSE BOQ", "Includes Tab 7 for live opening deduction.", ds["mas_rows"])
+    build_doors_windows_sheet(wb_mp)
     wb_mp.remove(dw)
     wb_mp.active = 0
     out["BOQ_Masonry_Plaster.xlsx"] = _wb_bytes(wb_mp)
@@ -817,7 +1210,7 @@ def compile_modular_boq_bytes(
 
 
 def generate_modular_boq_files() -> list[str]:
-    """Generate and save Master 9-Tab Modular BOQ (.xlsx + .pdf) and standalone part files to disk."""
+    """Generate and save Master 12-Tab Modular BOQ (.xlsx + .pdf) and all standalone part files."""
     os.makedirs(EXPORTS_DIR, exist_ok=True)
     files_map = compile_modular_boq_bytes()
     saved: list[str] = []
